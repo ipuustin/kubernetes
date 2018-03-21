@@ -6,6 +6,7 @@ go_library(
         "state.go",
         "state_file.go",
         "state_mem.go",
+        "pool.go",
     ],
     importpath = "k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/state",
     visibility = ["//visibility:public"],

@@ -340,7 +340,7 @@ func TestUpdateStateFile(t *testing.T) {
 			fileState := stateFile{
 				stateFilePath: sfilePath.Name(),
 				policyName:    "static",
-				cache:         NewMemoryState(),
+				cache:         NewMemoryState(nil),
 			}
 
 			fileState.SetDefaultCPUSet(tc.expectedState.defaultCPUSet)

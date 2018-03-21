@@ -20,7 +20,10 @@ import (
 	"sync"
 
 	"github.com/golang/glog"
+	"k8s.io/api/core/v1"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
+	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/topology"
+	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/pool"
 )
 
 type stateMemory struct {
@@ -107,4 +110,38 @@ func (s *stateMemory) ClearState() {
 	s.defaultCPUSet = cpuset.CPUSet{}
 	s.assignments = make(ContainerCPUAssignments)
 	glog.V(2).Infof("[cpumanager] cleared state")
+}
+
+///////////////////////////////////
+
+func (s *stateMemory) GetPoolCPUs() map[string]cpuset.CPUSet {
+	return nil
+}
+
+func (s *stateMemory) GetPoolAssignments() map[string]cpuset.CPUSet {
+	return nil
+}
+
+func (s *stateMemory) GetPoolCapacity() v1.ResourceList {
+	return v1.ResourceList{}
+}
+
+func (s *stateMemory) SetAllocator(allocfn pool.AllocCpuFunc, t *topology.CPUTopology) {
+	return
+}
+
+func (s *stateMemory) Reconfigure(cfg pool.Config) error {
+	return nil
+}
+
+func (s *stateMemory) AllocateCPUs(containerID string, pool string, numCPUs int) (cpuset.CPUSet, error) {
+	return cpuset.NewCPUSet(), nil
+}
+
+func (s *stateMemory) AllocateCPU(containerID string, pool string, milliCPU int64) (cpuset.CPUSet, error) {
+	return cpuset.NewCPUSet(), nil
+}
+
+func (s *stateMemory) ReleaseCPU(containerID string) {
+	return
 }

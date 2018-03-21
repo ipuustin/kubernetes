@@ -282,7 +282,7 @@ func TestCPUManagerGenerate(t *testing.T) {
 			}
 			defer os.RemoveAll(sDir)
 
-			mgr, err := NewManager(testCase.cpuPolicyName, 5*time.Second, machineInfo, testCase.nodeAllocatableReservation, sDir)
+			mgr, err := NewManager(testCase.cpuPolicyName, 5*time.Second, nil, machineInfo, testCase.nodeAllocatableReservation, sDir)
 			if testCase.expectedError != nil {
 				if !strings.Contains(err.Error(), testCase.expectedError.Error()) {
 					t.Errorf("Unexpected error message. Have: %s wants %s", err.Error(), testCase.expectedError.Error())
@@ -321,7 +321,7 @@ func TestCPUManagerRemove(t *testing.T) {
 		policy: &mockPolicy{
 			err: fmt.Errorf("fake error"),
 		},
-		state:             state.NewMemoryState(),
+		state:             state.NewMemoryState(nil),
 		containerRuntime:  mockRuntimeService{},
 		activePods:        func() []*v1.Pod { return nil },
 		podStatusProvider: mockPodStatusProvider{},

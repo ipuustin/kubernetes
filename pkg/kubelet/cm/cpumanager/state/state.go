@@ -17,7 +17,10 @@ limitations under the License.
 package state
 
 import (
+	"k8s.io/api/core/v1"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
+	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/topology"
+	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/pool"
 )
 
 // ContainerCPUAssignments type used in cpu manger state
@@ -38,6 +41,9 @@ type Reader interface {
 	GetDefaultCPUSet() cpuset.CPUSet
 	GetCPUSetOrDefault(containerID string) cpuset.CPUSet
 	GetCPUAssignments() ContainerCPUAssignments
+	GetPoolCPUs() map[string]cpuset.CPUSet
+	GetPoolAssignments() map[string]cpuset.CPUSet
+	GetPoolCapacity() v1.ResourceList
 }
 
 type writer interface {
@@ -46,6 +52,11 @@ type writer interface {
 	SetCPUAssignments(ContainerCPUAssignments)
 	Delete(containerID string)
 	ClearState()
+	SetAllocator(allocfn pool.AllocCpuFunc, t *topology.CPUTopology)
+	Reconfigure(cfg pool.Config) error
+	AllocateCPUs(containerID string, pool string, numCPUs int) (cpuset.CPUSet, error)
+	AllocateCPU(containerID string, pool string, milliCPU int64) (cpuset.CPUSet, error)
+	ReleaseCPU(containerID string)
 }
 
 // State interface provides methods for tracking and setting cpu/pod assignment
