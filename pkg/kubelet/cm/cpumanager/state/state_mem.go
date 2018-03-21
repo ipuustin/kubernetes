@@ -26,7 +26,7 @@ import (
 type stateMemory struct {
 	sync.RWMutex
 	assignments   ContainerCPUAssignments
-	defaultCPUSet cpuset.CPUSet
+	pools         map[string]cpuset.CPUSet
 }
 
 var _ State = &stateMemory{}
@@ -36,7 +36,7 @@ func NewMemoryState() State {
 	glog.Infof("[cpumanager] initializing new in-memory state store")
 	return &stateMemory{
 		assignments:   ContainerCPUAssignments{},
-		defaultCPUSet: cpuset.NewCPUSet(),
+		pools:         make(map[string]cpuset.CPUSet),
 	}
 }
 
@@ -48,11 +48,21 @@ func (s *stateMemory) GetCPUSet(containerID string) (cpuset.CPUSet, bool) {
 	return res.Clone(), ok
 }
 
-func (s *stateMemory) GetDefaultCPUSet() cpuset.CPUSet {
+func (s *stateMemory) GetPoolCPUSet(pool string) (cpuset.CPUSet, bool) {
 	s.RLock()
 	defer s.RUnlock()
 
-	return s.defaultCPUSet.Clone()
+	if cset, ok := s.pools[pool]; !ok {
+		return cpuset.NewCPUSet(), false
+	} else {
+		return cset.Clone(), true
+	}
+}
+
+func (s *stateMemory) GetDefaultCPUSet() cpuset.CPUSet {
+	cset, _ := s.GetPoolCPUSet("default")
+
+	return cset
 }
 
 func (s *stateMemory) GetCPUSetOrDefault(containerID string) cpuset.CPUSet {
@@ -68,6 +78,18 @@ func (s *stateMemory) GetCPUAssignments() ContainerCPUAssignments {
 	return s.assignments.Clone()
 }
 
+func (s *stateMemory) GetCPUPools() map[string]cpuset.CPUSet {
+	s.RLock()
+	defer s.RUnlock()
+
+	pools := make(map[string]cpuset.CPUSet)
+	for poolName, cset := range s.pools {
+		pools[poolName] = cset.Clone()
+	}
+
+	return pools
+}
+
 func (s *stateMemory) SetCPUSet(containerID string, cset cpuset.CPUSet) {
 	s.Lock()
 	defer s.Unlock()
@@ -76,12 +98,16 @@ func (s *stateMemory) SetCPUSet(containerID string, cset cpuset.CPUSet) {
 	glog.Infof("[cpumanager] updated desired cpuset (container id: %s, cpuset: \"%s\")", containerID, cset)
 }
 
-func (s *stateMemory) SetDefaultCPUSet(cset cpuset.CPUSet) {
+func (s *stateMemory) SetPoolCPUSet(pool string, cset cpuset.CPUSet) {
 	s.Lock()
 	defer s.Unlock()
 
-	s.defaultCPUSet = cset
-	glog.Infof("[cpumanager] updated default cpuset: \"%s\"", cset)
+	s.pools[pool] = cset
+	glog.Infof("[cpumanager] updated \"%s\" cpuset: \"%s\"", pool, cset)
+}
+
+func (s *stateMemory) SetDefaultCPUSet(cset cpuset.CPUSet) {
+	s.SetPoolCPUSet("default", cset)
 }
 
 func (s *stateMemory) SetCPUAssignments(a ContainerCPUAssignments) {
@@ -104,7 +130,7 @@ func (s *stateMemory) ClearState() {
 	s.Lock()
 	defer s.Unlock()
 
-	s.defaultCPUSet = cpuset.CPUSet{}
 	s.assignments = make(ContainerCPUAssignments)
+	s.pools = make(map[string]cpuset.CPUSet)
 	glog.V(2).Infof("[cpumanager] cleared state")
 }

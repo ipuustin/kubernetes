@@ -35,13 +35,16 @@ func (as ContainerCPUAssignments) Clone() ContainerCPUAssignments {
 // Reader interface used to read current cpu/pod assignment state
 type Reader interface {
 	GetCPUSet(containerID string) (cpuset.CPUSet, bool)
+	GetPoolCPUSet(pool string) (cpuset.CPUSet, bool)
 	GetDefaultCPUSet() cpuset.CPUSet
 	GetCPUSetOrDefault(containerID string) cpuset.CPUSet
+	GetCPUPools() map[string]cpuset.CPUSet
 	GetCPUAssignments() ContainerCPUAssignments
 }
 
 type writer interface {
 	SetCPUSet(containerID string, cpuset cpuset.CPUSet)
+	SetPoolCPUSet(pool string, cpuset cpuset.CPUSet)
 	SetDefaultCPUSet(cpuset cpuset.CPUSet)
 	SetCPUAssignments(ContainerCPUAssignments)
 	Delete(containerID string)

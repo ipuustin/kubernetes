@@ -98,7 +98,14 @@ type manager struct {
 var _ Manager = &manager{}
 
 // NewManager creates new cpu manager based on provided policy
-func NewManager(cpuPolicyName string, reconcilePeriod time.Duration, machineInfo *cadvisorapi.MachineInfo, nodeAllocatableReservation v1.ResourceList, stateFileDirecory string) (Manager, error) {
+func NewManager(
+	cpuPolicyName string,
+	reconcilePeriod time.Duration,
+	cpuPools map[string][]int,
+	machineInfo *cadvisorapi.MachineInfo,
+	nodeAllocatableReservation v1.ResourceList,
+	stateFileDirectory string,
+) (Manager, error) {
 	var policy Policy
 
 	switch policyName(cpuPolicyName) {
@@ -132,13 +139,41 @@ func NewManager(cpuPolicyName string, reconcilePeriod time.Duration, machineInfo
 		numReservedCPUs := int(math.Ceil(reservedCPUsFloat))
 		policy = NewStaticPolicy(topo, numReservedCPUs)
 
+	case PolicyPool:
+		topo, err := topology.Discover(machineInfo)
+		if err != nil {
+			return nil, err
+		}
+		glog.Infof("[cpumanager] detected CPU topology: %v", topo)
+		reservedCPUs, ok := nodeAllocatableReservation[v1.ResourceCPU]
+		if !ok {
+			// The pool policy cannot initialize without this information. Panic!
+			panic("[cpumanager] unable to determine reserved CPU resources for pool policy")
+		}
+		if reservedCPUs.IsZero() {
+			// Panic!
+			//
+			// The pool policy requires this to be nonzero. Zero CPU reservation
+			// would allow the shared pool to be completely exhausted. At that point
+			// either we would violate our guarantee of exclusivity or need to evict
+			// any pod that has at least one container that requires zero CPUs.
+			// See the comments in policy_pool.go for more details.
+			panic("[cpumanager] the pool policy requires systemreserved.cpu + kubereserved.cpu to be greater than zero")
+		}
+
+		// Take the ceiling of the reservation, since fractional CPUs cannot be
+		// exclusively allocated.
+		reservedCPUsFloat := float64(reservedCPUs.MilliValue()) / 1000
+		numReservedCPUs := int(math.Ceil(reservedCPUsFloat))
+		policy = NewPoolPolicy(topo, numReservedCPUs, cpuPools)
+
 	default:
 		glog.Errorf("[cpumanager] Unknown policy \"%s\", falling back to default policy \"%s\"", cpuPolicyName, PolicyNone)
 		policy = NewNonePolicy()
 	}
 
 	stateImpl := state.NewFileState(
-		path.Join(stateFileDirecory, CPUManagerStateFileName),
+		path.Join(stateFileDirectory, CPUManagerStateFileName),
 		policy.Name())
 
 	manager := &manager{

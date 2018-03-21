@@ -444,6 +444,8 @@ type KubeletConfiguration struct {
 	// Default: ["pods"]
 	// +optional
 	EnforceNodeAllocatable []string `json:"enforceNodeAllocatable,omitempty"`
+	// CPU pool configuration for --cpu-manager-policy=pooled
+	CPUPools map[string][]int
 }
 
 type KubeletAuthorizationMode string

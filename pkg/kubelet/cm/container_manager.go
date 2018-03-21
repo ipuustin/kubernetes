@@ -112,6 +112,7 @@ type NodeConfig struct {
 	ExperimentalCPUManagerReconcilePeriod time.Duration
 	ExperimentalPodPidsLimit              int64
 	EnforceCPULimits                      bool
+	ExperimentalCPUPools                  map[string][]int
 }
 
 type NodeAllocatableConfig struct {

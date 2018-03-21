@@ -175,6 +175,18 @@ func (in *KubeletConfiguration) DeepCopyInto(out *KubeletConfiguration) {
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
+	if in.CPUPools != nil {
+		in, out := &in.CPUPools, &out.CPUPools
+		*out = make(map[string][]int, len(*in))
+		for key, val := range *in {
+			if val == nil {
+				(*out)[key] = nil
+			} else {
+				(*out)[key] = make([]int, len(val))
+				copy((*out)[key], val)
+			}
+		}
+	}
 	return
 }
 
