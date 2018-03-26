@@ -139,6 +139,10 @@ func addPoolResource(c *api.Container, name string) error {
 	if req == nil {
 		req = api.ResourceList{}
 		c.Resources.Requests = req
+	} else if _, preset := req[api.ResourceName(name)]; preset {
+		// If there is a preset pool CPU request, leave it alone (but cross-check it later in
+		// the validation phase against the stock CPU request).
+		return nil
 	}
 
 	// If the pods container has a CPU request, we use that for our pool CPU request. If there
