@@ -71,10 +71,15 @@ func (sp *summaryProviderImpl) Get(updateStats bool) (*statsapi.Summary, error) 
 	if err != nil {
 		return nil, fmt.Errorf("failed to get rlimit stats: %v", err)
 	}
+	cpuPoolStats, err := sp.provider.CPUPoolStats()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get CPU pool stats: %v", err)
+	}
 
 	nodeStats := statsapi.NodeStats{
 		NodeName:  node.Name,
 		CPU:       rootStats.CPU,
+		CPUPool:   cpuPoolStats,
 		Memory:    rootStats.Memory,
 		Network:   networkStats,
 		StartTime: rootStats.StartTime,

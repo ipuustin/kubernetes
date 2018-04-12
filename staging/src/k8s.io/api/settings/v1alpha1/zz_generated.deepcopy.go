@@ -113,9 +113,7 @@ func (in *PodPresetSpec) DeepCopyInto(out *PodPresetSpec) {
 	if in.VolumeMounts != nil {
 		in, out := &in.VolumeMounts, &out.VolumeMounts
 		*out = make([]v1.VolumeMount, len(*in))
-		for i := range *in {
-			(*in)[i].DeepCopyInto(&(*out)[i])
-		}
+		copy(*out, *in)
 	}
 	return
 }

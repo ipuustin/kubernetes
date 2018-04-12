@@ -43,6 +43,9 @@ type NodeStats struct {
 	// Stats pertaining to CPU resources.
 	// +optional
 	CPU *CPUStats `json:"cpu,omitempty"`
+	// Stats pertaining to CPU Pools.
+	// +optional
+	CPUPool *CPUPoolStats `json:"cpupool,omitempty"`
 	// Stats pertaining to memory (RAM) resources.
 	// +optional
 	Memory *MemoryStats `json:"memory,omitempty"`
@@ -196,6 +199,22 @@ type CPUStats struct {
 	// Cumulative CPU usage (sum of all cores) since object creation.
 	// +optional
 	UsageCoreNanoSeconds *uint64 `json:"usageCoreNanoSeconds,omitempty"`
+}
+
+type PoolStats struct {
+	// CPU pool name.
+	Name       string   `json:"name"`
+	CpuList    string   `json:"cpuList"`
+	Containers []string `json:"containers,omitempty"`
+}
+
+// CPUPoolStats contains data about CPU pools.
+type CPUPoolStats struct {
+	// The time at which these stats were updated.
+	Time metav1.Time `json:"time"`
+	// Stats for every CPU pool enabled on the node.
+	// +optional
+	Pools []PoolStats `json:"pools,omitempty"`
 }
 
 // MemoryStats contains data about memory usage.

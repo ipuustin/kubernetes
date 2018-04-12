@@ -21,7 +21,7 @@ import (
 
 	"github.com/golang/glog"
 	"k8s.io/api/core/v1"
-	v1qos "k8s.io/kubernetes/pkg/apis/core/v1/helper/qos"
+	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/poolcache"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/state"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/topology"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
@@ -31,8 +31,6 @@ import (
 
 // PolicyPool is the name of the pool policy
 const PolicyPool policyName = "pool"
-
-var _ Policy = &poolPolicy{}
 
 // staticPolicy is a CPU manager policy that does not change CPU
 // assignments for exclusively pinned guaranteed containers after the main
@@ -92,9 +90,9 @@ var _ Policy = &poolPolicy{}
 // predefined CPU pool names
 // reserved: pool for system- and kube-reserved CPUs
 const CpuPoolReserved = "reserved"
+
 // default: pool for workloads that don't ask for a specific pool
 const CpuPoolDefault = "default"
-
 
 // NewPoolPolicy returns a CPU manager policy that does not change CPU
 // assignments for exclusively pinned guaranteed containers after the main
@@ -103,7 +101,7 @@ func NewPoolPolicy(topology *topology.CPUTopology, numReservedCPUs int, poolConf
 	var reservedSet, reservedPool, defaultPool cpuset.CPUSet
 	var err error
 	var ok bool
-	
+
 	pools := make(map[string]cpuset.CPUSet)
 
 	for name, cpuids := range poolConfig {
@@ -138,9 +136,14 @@ func NewPoolPolicy(topology *topology.CPUTopology, numReservedCPUs int, poolConf
 		}
 	}
 
+	cache := poolcache.GetCPUPoolCache()
+	if cache != nil {
+		cache.SetCPUPools(&pools)
+	}
+
 	return &poolPolicy{
 		topology: topology,
-		pools: pools,
+		pools:    pools,
 		reserved: reservedSet,
 	}
 }
@@ -172,7 +175,6 @@ func (p *poolPolicy) validateState(s state.State) error {
 		s.SetDefaultCPUSet(p.pools["default"])
 		return nil
 	}
-
 
 	// State has already been initialized from file (is not empty)
 	// 1 Check if the reserved cpuset is not part of default cpuset because:
@@ -214,6 +216,11 @@ func (p *poolPolicy) AddContainer(s state.State, pod *v1.Pod, container *v1.Cont
 
 	s.SetCPUSet(containerID, cpuset)
 
+	cache := poolcache.GetCPUPoolCache()
+	if cache != nil {
+		cache.AddContainer(containerID, pool)
+	}
+
 	return nil
 }
 
@@ -222,5 +229,11 @@ func (p *poolPolicy) RemoveContainer(s state.State, containerID string) error {
 	if _, ok := s.GetCPUSet(containerID); ok {
 		s.Delete(containerID)
 	}
+
+	cache := poolcache.GetCPUPoolCache()
+	if cache != nil {
+		cache.RemoveContainer(containerID)
+	}
+
 	return nil
 }
