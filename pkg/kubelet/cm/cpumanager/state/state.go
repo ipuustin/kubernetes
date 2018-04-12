@@ -57,6 +57,7 @@ type writer interface {
 	AllocateCPUs(containerID string, pool string, numCPUs int) (cpuset.CPUSet, error)
 	AllocateCPU(containerID string, pool string, milliCPU int64) (cpuset.CPUSet, error)
 	ReleaseCPU(containerID string)
+	GetContainerPoolName(containerID string) (string)
 }
 
 // State interface provides methods for tracking and setting cpu/pod assignment

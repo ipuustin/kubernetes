@@ -175,6 +175,13 @@ func (sf *stateFile) GetPoolAssignments() map[string]cpuset.CPUSet {
 	return sf.pools.GetPoolAssignments()
 }
 
+func (s *stateFile) GetContainerPoolName(containerID string) (string) {
+	s.RLock()
+	defer s.RUnlock()
+
+	return s.pools.GetContainerPoolName(containerID)
+}
+
 func (sf *stateFile) SetCPUSet(containerID string, cset cpuset.CPUSet) {
 	glog.Errorf("[cpumanager] deprecated function State.SetCPUSet called")
 }

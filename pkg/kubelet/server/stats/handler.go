@@ -84,6 +84,9 @@ type StatsProvider interface {
 
 	// GetPodCgroupRoot returns the literal cgroupfs value for the cgroup containing all pods
 	GetPodCgroupRoot() string
+
+	// CPUPoolStats returns CPU pool information from CPU Manager
+	CPUPoolStats() (*statsapi.CPUPoolStats, error)
 }
 
 type handler struct {

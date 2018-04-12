@@ -43,6 +43,9 @@ type NodeStats struct {
 	// Stats pertaining to CPU resources.
 	// +optional
 	CPU *CPUStats `json:"cpu,omitempty"`
+	// Stats pertaining to CPU Pools.
+	// +optional
+	CPUPool *CPUPoolStats `json:"cpupool,omitempty"`
 	// Stats pertaining to memory (RAM) resources.
 	// +optional
 	Memory *MemoryStats `json:"memory,omitempty"`
@@ -196,6 +199,48 @@ type CPUStats struct {
 	// Cumulative CPU usage (sum of all cores) since object creation.
 	// +optional
 	UsageCoreNanoSeconds *uint64 `json:"usageCoreNanoSeconds,omitempty"`
+}
+
+// CPUPoolUsage contains data about a single CPU pool.
+type CPUPoolUsage struct {
+	// CPU pool name.
+	Name string `json:"name"`
+	// CPUs in shared use.
+	SharedCPUs string `json:"sharedCPUs"`
+	// CPUs in exclusive use.
+	ExclusiveCPUs string `json:"exclusiveCPUs,omitempty"`
+	// Total pool capacity.
+	Capacity int64 `json:"capacity"`
+	// Capacity in use (allocated).
+	Usage int64 `json:"usage"`
+	// Containers in the pool.
+	Containers map[string]CPUPoolContainer `json:"containers,omitempty"`
+}
+
+// CPUPoolContainer contains information about a single container in a CPU pool.
+type CPUPoolContainer struct {
+	// ID of this container.
+	ID string `json:"-"`
+	// Name of the pod for this container.
+	Pod string `json:"podName,omitempty"`
+	// Name of this container.
+	Container string `json:"containerName,omitempty"`
+	// Time of creation of this container.
+	Time metav1.Time `json:"startTime"`
+	// Container CPU allocation.
+	CPU int64 `json:"CPU"`
+	// TODO: could we correlate with this as well ?
+	// Detailed container statistics.
+	// Stats *ContainerStats
+}
+
+// CPUPoolStats contains data about CPU pools.
+type CPUPoolStats struct {
+	// The time at which these stats were updated.
+	Time metav1.Time `json:"time"`
+	// Stats for every CPU pool enabled on the node.
+	// +optional
+	Pools map[string]CPUPoolUsage `json:"pools,omitempty"`
 }
 
 // MemoryStats contains data about memory usage.

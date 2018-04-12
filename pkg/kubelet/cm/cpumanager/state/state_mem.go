@@ -145,3 +145,7 @@ func (s *stateMemory) AllocateCPU(containerID string, pool string, milliCPU int6
 func (s *stateMemory) ReleaseCPU(containerID string) {
 	return
 }
+
+func (s *stateMemory) GetContainerPoolName(containerID string) (string) {
+	return ""
+}

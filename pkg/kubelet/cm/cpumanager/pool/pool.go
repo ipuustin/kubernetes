@@ -59,7 +59,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/topology"
-
+	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/poolcache"
 	admission "k8s.io/kubernetes/plugin/pkg/admission/cpupool"
 )
 
@@ -112,6 +112,7 @@ type PoolSet struct {
 	target      Config                    // requested pool configuration
 	topology   *topology.CPUTopology      // CPU topology info
 	allocfn     AllocCpuFunc              // CPU allocator function
+	stats       poolcache.PoolCache       // CPU pool stats/metrics cache
 }
 
 // Adjust pool configuration to have at least a reserved and default.
@@ -414,6 +415,7 @@ func NewPoolSet(cfg Config) (*PoolSet, error) {
 	var ps *PoolSet = &PoolSet{
 		pools:      make(map[string]*Pool),
 		containers: make(map[string]*Container),
+		stats:      poolcache.GetCPUPoolCache(),
 	}
 
 	if err := ps.Reconfigure(cfg); err != nil {
@@ -478,6 +480,10 @@ func (ps *PoolSet) ReconcileConfig() (bool, error) {
 
 		if err := ps.Verify(); err != nil {
 			return false, err
+		}
+
+		for pool, _ := range ps.pools {
+			ps.updatePoolMetrics(pool)
 		}
 
 		return true, nil
@@ -590,6 +596,14 @@ func (ps *PoolSet) ReleaseCPU(id string) {
 	}
 }
 
+// Get the name of the CPU pool a container is assigned to.
+func (ps *PoolSet) GetContainerPoolName(id string) (string) {
+	if c, ok := ps.containers[id]; ok {
+		return c.pool
+	}
+	return ""
+}
+
 // Get the CPU capacity of pools.
 func (ps *PoolSet) GetPoolCapacity() v1.ResourceList {
 	cap := v1.ResourceList{}
@@ -686,6 +700,60 @@ func (ps *PoolSet) GetCPUAssignments() map[string]cpuset.CPUSet {
 	return a
 }
 
+// Get metrics for the given pool.
+func (ps *PoolSet) getPoolMetrics(pool string) (string, cpuset.CPUSet, cpuset.CPUSet, int64, int64) {
+	if _, ok := ps.pools[pool]; ok && pool != ReservedPool {
+		c, s, e := ps.getPoolCPUSets(pool)
+		u := ps.getPoolUsage(pool)
+
+		return pool, s, e, c, u
+	}
+
+	return "", cpuset.NewCPUSet(), cpuset.NewCPUSet(), 0, 0
+}
+
+// Get the shared and exclusive CPUs and the total capacity for the given pool.
+func (ps *PoolSet) getPoolCPUSets(pool string) (int64, cpuset.CPUSet, cpuset.CPUSet) {
+	var s, e cpuset.CPUSet
+
+	if p, ok := ps.pools[pool]; ok {
+		s = p.shared.Clone()
+		e = p.exclusive.Clone()
+
+		if pool == DefaultPool {
+			r := ps.pools[ReservedPool]
+			s = s.Union(r.shared)
+			e = e.Union(r.exclusive)
+		}
+	} else {
+		s = cpuset.NewCPUSet()
+		e = cpuset.NewCPUSet()
+	}
+
+	return int64(1000 * (s.Size() + e.Size())), s, e
+}
+
+// Collect all CPU allocations for the given pool (in MilliCPUs).
+func (ps *PoolSet) getPoolUsage(pool string) int64 {
+	var mCPU int64
+
+	for _, c := range ps.containers {
+		if c.pool != pool && !(pool == DefaultPool && c.pool == ReservedPool) {
+			continue
+		}
+		mCPU += c.mCPU
+	}
+
+	return int64(mCPU)
+}
+
+// Update pool metrics.
+func (ps *PoolSet) updatePoolMetrics(pool string) {
+	if name, s, e, c, u := ps.getPoolMetrics(pool); name != "" {
+		ps.stats.UpdatePool(name, s, e, c, u)
+	}
+}
+
 //
 // JSON mashalling and unmarshalling
 //
@@ -780,6 +848,7 @@ func (ps *PoolSet) UnmarshalJSON(b []byte) error {
 	ps.pools      = m.Pools
 	ps.containers = m.Containers
 	ps.target     = m.Target
+	ps.stats      = poolcache.GetCPUPoolCache()
 
 	return nil
 }

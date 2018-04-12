@@ -24,6 +24,7 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/state"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/topology"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/pool"
+	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/poolcache"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 )
 
@@ -37,6 +38,8 @@ type poolPolicy struct {
 	topology *topology.CPUTopology
 	// pool configuration
 	poolCfg pool.Config
+	// pool usage/stats cache
+	stats poolcache.PoolCache
 }
 
 // Ensure poolPolicy implements Policy interface
@@ -54,6 +57,7 @@ func NewPoolPolicy(topology *topology.CPUTopology, numReservedCPUs int, cpuPoolC
 	return &poolPolicy{
 		topology: topology,
 		poolCfg:  cfg,
+		stats: poolcache.NewCPUPoolCache(),
 	}
 }
 
@@ -124,11 +128,15 @@ func (p *poolPolicy) AddContainer(s state.State, pod *v1.Pod, container *v1.Cont
 		return err
 	}
 
+	p.stats.AddContainer(pool, containerID, "", "", int64(req))
+
 	return nil
 }
 
 func (p *poolPolicy) RemoveContainer(s state.State, containerID string) error {
+	pool := s.GetContainerPoolName(containerID)
 	s.ReleaseCPU(containerID)
+	p.stats.RemoveContainer(pool, containerID)
 
 	return nil
 }

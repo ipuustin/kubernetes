@@ -18,6 +18,7 @@ package stats
 
 import (
 	"fmt"
+	"time"
 
 	cadvisorapiv1 "github.com/google/cadvisor/info/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -25,6 +26,7 @@ import (
 	internalapi "k8s.io/kubernetes/pkg/kubelet/apis/cri"
 	statsapi "k8s.io/kubernetes/pkg/kubelet/apis/stats/v1alpha1"
 	"k8s.io/kubernetes/pkg/kubelet/cadvisor"
+	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/poolcache"
 	kubecontainer "k8s.io/kubernetes/pkg/kubelet/container"
 	kubepod "k8s.io/kubernetes/pkg/kubelet/pod"
 	"k8s.io/kubernetes/pkg/kubelet/server/stats"
@@ -135,6 +137,47 @@ func (p *StatsProvider) RootFsStats() (*statsapi.FsStats, error) {
 		Inodes:         rootFsInfo.Inodes,
 		InodesUsed:     nodeFsInodesUsed,
 	}, nil
+}
+
+// CPUPoolStats returns the stats of the CPU Manager pool policy.
+func (p *StatsProvider) CPUPoolStats() (*statsapi.CPUPoolStats, error) {
+	cache := poolcache.GetCPUPoolCache()
+	if cache == nil  || !cache.IsInitialized() {
+		return nil, nil
+	}
+
+	_ = metav1.NewTime(time.Now())
+
+	return nil, nil
+
+/*
+	pools := cache.GetCPUPoolStats()
+	containers := cache.GetCPUPoolContainers()
+
+	poolStats := make([]statsapi.PoolStats, len(*pools))
+	i := 0
+
+	for pool, cpuset := range *pools {
+		cids := make([]string, 0)
+		for cid, containerPool := range *containers {
+			if pool == containerPool {
+				cids = append(cids, cid)
+			}
+		}
+
+		poolStats[i] = statsapi.PoolStats{
+			Name:       pool,
+			CpuList:    cpuset.String(),
+			Containers: cids,
+		}
+		i++
+	}
+
+	return &statsapi.CPUPoolStats{
+		Time:  metav1.NewTime(time.Now()),
+		Pools: poolStats,
+	}, nil
+*/
 }
 
 // GetContainerInfo returns stats (from cAdvisor) for a container.
