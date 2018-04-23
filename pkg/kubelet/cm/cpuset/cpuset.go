@@ -278,3 +278,36 @@ func (s CPUSet) Clone() CPUSet {
 	}
 	return b.Result()
 }
+
+// JSON marshalling interface.
+//
+// Strictly speaking this breaks the immutability property of CPUSet.
+// However providing this interface makes it much easier to deal with
+// saving and restoring data structures with CPUSet members. Usually
+// we get away completely without having to write a pair of functions
+// to do the serialising and deserialising.
+
+// Marshal CPUSet to JSON.
+func (s CPUSet) MarshalJSON() ([]byte, error) {
+	return []byte("\"" + s.String() + "\""), nil
+}
+
+// Unmarshal CPUSet from JSON.
+func (s *CPUSet) UnmarshalJSON(b []byte) error {
+	if !s.IsEmpty() {
+		glog.Fatalf("CPUset (%s) not empty, won't unmarshal into it", s.String())
+	}
+
+	if len(b) == 0 {
+		return nil
+	}
+
+	set, err := Parse(string(b[1:len(b)-1]))
+
+	if err != nil {
+		return err
+	}
+
+	s.elems = set.elems
+	return nil
+}
