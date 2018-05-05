@@ -29,4 +29,5 @@ type Policy interface {
 	AddContainer(s state.State, pod *v1.Pod, container *v1.Container, containerID string) error
 	// RemoveContainer call is idempotent
 	RemoveContainer(s state.State, containerID string) error
+	GetCapacity(s state.State) v1.ResourceList
 }

@@ -75,6 +75,11 @@ type ContainerManager interface {
 	// and inactive device plugin resources previously registered on the node.
 	GetDevicePluginResourceCapacity() (v1.ResourceList, v1.ResourceList, []string)
 
+	// GetAdditionalCapacity returns the amount of additional compute resources tracked by container manager on the node.
+	// FIXME(avalluri): This should merge with GetCapacity() which needs changes
+	// in kubelet the way how cm.GetCapacity() used.
+	GetAdditionalCapacity() v1.ResourceList
+
 	// UpdateQOSCgroups performs housekeeping updates to ensure that the top
 	// level QoS containers have their desired state in a thread-safe way
 	UpdateQOSCgroups() error

@@ -50,6 +50,10 @@ func (m *fakeManager) State() state.Reader {
 	return m.state
 }
 
+func (m *fakeManager) GetCapacity() v1.ResourceList {
+	return v1.ResourceList{}
+}
+
 // NewFakeManager creates empty/fake cpu manager
 func NewFakeManager() Manager {
 	return &fakeManager{
