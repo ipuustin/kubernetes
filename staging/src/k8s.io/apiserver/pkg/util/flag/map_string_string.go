@@ -46,6 +46,94 @@ func (m *MapStringString) String() string {
 	return strings.Join(pairs, ",")
 }
 
+// Split up a string of comma-separated key=value pairs handling properly
+// values that contain commas.
+func splitValues(str string) ([]string, error) {
+	if len(str) == 0 {
+		return make([]string, 0), nil
+	}
+
+	buf := make([]byte, 0, len(str))
+	idx := make([]int, 0)
+	cnt := 0
+
+	// loop through str collecting end-indices of items
+	psep := ' '
+	pidx := 0
+	for i, j := 0, 0; i < len(str); i++ {
+		// filter space and tab
+		if str[i] == ' ' || str[i] == '\t' {
+			continue
+		}
+
+		buf = buf[:len(buf) + 1]
+		buf[j] = str[i]
+
+		// non-separators: just copy
+		if buf[j] != ',' && buf[j] != '=' {
+			j++
+			continue
+		}
+
+		if j == 0 {
+			return nil, fmt.Errorf("MapStringString: invalid value '%s', starts with a separator (',', '=')", str)
+		}
+
+		// check for invalid separator sequences
+		if psep == ' ' {
+			if buf[j] != '=' {
+				return nil, fmt.Errorf("MapStringString: invalid value '%s', first separator not '='", str)
+			}
+		} else /* if psep == ',' */ {
+			if pidx == j - 1 {
+				if psep == ',' && buf[j] == '=' {
+					return nil, fmt.Errorf("MapStringString: invalid value '%s', adjacent separators (',', '=')", str)
+				}
+			}
+			if buf[j] == '=' && psep == '=' {
+				return nil, fmt.Errorf("MapStringString: invalid value '%s', ambiguous '='", str)
+			}
+		}
+
+		// count item, store previous end index if appropriate
+		if buf[j] == '=' {
+			cnt++
+			if psep == ',' {
+				idx = append(idx, pidx)
+			}
+		}
+
+		// store as previous separator
+		psep = rune(buf[j])
+		pidx = j
+		j++
+	}
+
+	if len(buf) == 0 {
+		return make([]string, 0), nil
+	}
+
+	if buf[len(buf)-1] == ',' {
+		return nil, fmt.Errorf("MapStringString: invalid value '%s', ends with ','", str)
+	}
+
+	if cnt == 0 {
+		return nil, fmt.Errorf("MapStringString: invalid value '%s', no key=value items found", str)
+	}
+
+	// collect found items
+	items := make([]string, cnt)
+	beg := 0
+	idx = append(idx, len(buf))
+	for i := 0; i < len(idx); i++ {
+		end := idx[i]
+		items[i] = string(buf[beg:end])
+		beg = end + 1
+	}
+
+	return items, nil
+}
+
 // Set implements github.com/spf13/pflag.Value
 func (m *MapStringString) Set(value string) error {
 	if m.Map == nil {
@@ -56,7 +144,13 @@ func (m *MapStringString) Set(value string) error {
 		*m.Map = make(map[string]string)
 		m.initialized = true
 	}
-	for _, s := range strings.Split(value, ",") {
+
+	values, err := splitValues(value)
+	if err != nil {
+		return err
+	}
+
+	for _, s := range values {
 		if len(s) == 0 {
 			continue
 		}
