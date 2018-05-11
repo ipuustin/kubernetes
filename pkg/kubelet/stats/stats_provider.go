@@ -142,7 +142,7 @@ func (p *StatsProvider) RootFsStats() (*statsapi.FsStats, error) {
 // CPUPoolStats returns the stats of the CPU Manager pool policy.
 func (p *StatsProvider) CPUPoolStats() (*statsapi.CPUPoolStats, error) {
 	cache := poolcache.GetCPUPoolCache()
-	if cache == nil  || !cache.IsInitialized() {
+	if !cache.IsInitialized() {
 		return nil, nil
 	}
 

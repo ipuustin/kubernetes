@@ -60,7 +60,11 @@ func NewCPUPoolCache() PoolCache {
 }
 
 func GetCPUPoolCache() PoolCache {
-	return cache
+	if cache == nil {
+		return &poolCache{}
+	} else {
+		return cache
+	}
 }
 
 func (c *poolCache) UpdatePool(pool string, shared, exclusive cpuset.CPUSet, capacity, usage int64) {
