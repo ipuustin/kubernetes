@@ -314,7 +314,7 @@ func ParseConfig(topo *topology.CPUTopology, allocfn AllocCpuFunc, numReservedCP
 
 		allCPUs = allCPUs.Difference(cfg[pool])
 	}
-	
+
 	// create reserved pool if it was specified by CPU count
 	pool := ReservedPool
 	if _, ok := cfg[pool]; !ok {
@@ -329,6 +329,10 @@ func ParseConfig(topo *topology.CPUTopology, allocfn AllocCpuFunc, numReservedCP
 
 	// create other pools by CPU count
 	for _, pool := range byCpuCnt {
+		if pool == ReservedPool {
+			continue
+		}
+
 		countCfg := cpuPoolConfig[pool]
 
 		if count, err := strconv.Atoi(countCfg[1:]); err != nil {
@@ -350,11 +354,7 @@ func ParseConfig(topo *topology.CPUTopology, allocfn AllocCpuFunc, numReservedCP
 		cpus, _ := allocfn(topo, reserved, numReservedCPUs)
 		extra := reserved.Difference(cpus)
 		cfg[ReservedPool] = cpus
-		if def, ok := cfg[DefaultPool]; ok {
-			cfg[DefaultPool] = def.Union(extra)
-		} else {
-			cfg[DefaultPool] = extra
-		}
+		allCPUs = allCPUs.Union(extra)
 	}
 
 	// assign remaining CPUs to wildcard pool or the default one
@@ -362,12 +362,15 @@ func ParseConfig(topo *topology.CPUTopology, allocfn AllocCpuFunc, numReservedCP
 		cfg[wildcard] = allCPUs
 		allCPUs = cpuset.NewCPUSet()
 	} else {
-		if def, ok := cfg[DefaultPool]; ok {
-			cfg[DefaultPool] = def.Union(allCPUs)
-		} else {
-			cfg[DefaultPool] = allCPUs
+		if !allCPUs.IsEmpty() {
+			glog.Warningf("[cpumanager] adding unused CPUs (%s) to the default pool", allCPUs.String())
+			if def, ok := cfg[DefaultPool]; ok {
+				cfg[DefaultPool] = def.Union(allCPUs)
+			} else {
+				cfg[DefaultPool] = allCPUs
+			}
+			allCPUs = cpuset.NewCPUSet()
 		}
-		allCPUs = cpuset.NewCPUSet()
 	}
 
 	glog.Infof("[cpumanager] parsed pool configuration (%s):", cpuPoolConfig)
