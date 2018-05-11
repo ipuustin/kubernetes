@@ -613,30 +613,12 @@ func (ps *PoolSet) GetContainerPoolName(id string) (string) {
 // Get the CPU capacity of pools.
 func (ps *PoolSet) GetPoolCapacity() v1.ResourceList {
 	cap := v1.ResourceList{}
-	def := 0
-
-	//
-	// collect pool CPU capacity
-	//
-	// Note: Currently we omit the reserved pool altogether
-	//       and report its capacity in the default pool.
-	//       This is in line how we allocate CPU for the
-	//       default pool (and it mimicks the static policy).
-	//
 
 	for name, pool := range ps.pools {
 		qty := 1000 * (pool.shared.Size() + pool.exclusive.Size())
-
-		if name == ReservedPool || name == DefaultPool {
-			def += qty
-		} else {
-			res := v1.ResourceName(Prefix + name)
-			cap[res] = *resource.NewQuantity(int64(qty), resource.DecimalSI)
-		}
+		res := v1.ResourceName(Prefix + name)
+		cap[res] = *resource.NewQuantity(int64(qty), resource.DecimalSI)
 	}
-
-	res := v1.ResourceName(Prefix + DefaultPool)
-	cap[res] = *resource.NewQuantity(int64(def), resource.DecimalSI)
 
 	return cap
 }
@@ -725,12 +707,6 @@ func (ps *PoolSet) getPoolCPUSets(pool string) (int64, cpuset.CPUSet, cpuset.CPU
 	if p, ok := ps.pools[pool]; ok {
 		s = p.shared.Clone()
 		e = p.exclusive.Clone()
-
-		if pool == DefaultPool {
-			r := ps.pools[ReservedPool]
-			s = s.Union(r.shared)
-			e = e.Union(r.exclusive)
-		}
 	} else {
 		s = cpuset.NewCPUSet()
 		e = cpuset.NewCPUSet()
@@ -741,16 +717,16 @@ func (ps *PoolSet) getPoolCPUSets(pool string) (int64, cpuset.CPUSet, cpuset.CPU
 
 // Collect all CPU allocations for the given pool (in MilliCPUs).
 func (ps *PoolSet) getPoolUsage(pool string) int64 {
-	var mCPU int64
+	u := int64(1000 * ps.pools[pool].exclusive.Size())
 
 	for _, c := range ps.containers {
-		if c.pool != pool && !(pool == DefaultPool && c.pool == ReservedPool) {
-			continue
+		if c.pool == pool {
+			u += c.mCPU
+			break
 		}
-		mCPU += c.mCPU
 	}
 
-	return int64(mCPU)
+	return u
 }
 
 // Update pool metrics.
