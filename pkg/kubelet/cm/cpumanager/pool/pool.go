@@ -614,8 +614,8 @@ func (ps *PoolSet) GetContainerPoolName(id string) (string) {
 func (ps *PoolSet) GetPoolCapacity() v1.ResourceList {
 	cap := v1.ResourceList{}
 
-	for name, pool := range ps.pools {
-		qty := 1000 * (pool.shared.Size() + pool.exclusive.Size())
+	for name, p := range ps.pools {
+		qty := 1000 * (p.shared.Size() + p.exclusive.Size())
 		res := v1.ResourceName(Prefix + name)
 		cap[res] = *resource.NewQuantity(int64(qty), resource.DecimalSI)
 	}
@@ -715,18 +715,26 @@ func (ps *PoolSet) getPoolCPUSets(pool string) (int64, cpuset.CPUSet, cpuset.CPU
 	return int64(1000 * (s.Size() + e.Size())), s, e
 }
 
-// Collect all CPU allocations for the given pool (in MilliCPUs).
+// Get the total CPU allocations for the given pool (in MilliCPUs).
 func (ps *PoolSet) getPoolUsage(pool string) int64 {
-	u := int64(1000 * ps.pools[pool].exclusive.Size())
+	p := ps.pools[pool]
 
-	for _, c := range ps.containers {
-		if c.pool == pool {
-			u += c.mCPU
-			break
-		}
-	}
+	return int64(1000 * int64(p.exclusive.Size()) + p.used)
+}
 
-	return u
+// Get the total size of a pool (in CPUs).
+func (ps *PoolSet) getPoolSize(pool string) int {
+	p := ps.pools[pool]
+
+	return p.shared.Size() + p.exclusive.Size()
+}
+
+// Get the total CPU capacity for the given pool (in MilliCPUs).
+func (ps *PoolSet) getPoolCapacity(pool string) int64 {
+	p := ps.pools[pool]
+	n := p.shared.Size() + p.exclusive.Size()
+
+	return int64(1000 * n)
 }
 
 // Update pool metrics.
