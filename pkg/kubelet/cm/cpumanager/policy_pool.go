@@ -113,7 +113,7 @@ func (p *poolPolicy) AddContainer(s state.State, pod *v1.Pod, container *v1.Cont
 		return nil
 	}
 
-	pool, req, lim := pool.GetContainerPoolResources(container)
+	pool, req, lim := pool.GetContainerPoolResources(pod, container)
 
 	glog.Infof("[cpumanager] pool policy: container %s asks for %d/%d from pool %s", containerID, req, lim, pool)
 

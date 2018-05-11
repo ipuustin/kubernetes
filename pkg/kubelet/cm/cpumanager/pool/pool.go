@@ -57,6 +57,7 @@ import (
 
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	kubeapi "k8s.io/kubernetes/pkg/apis/core"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/topology"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/poolcache"
@@ -382,12 +383,18 @@ func ParseConfig(topo *topology.CPUTopology, allocfn AllocCpuFunc, numReservedCP
 }
 
 // Get the CPU pool, request, and limit of a container.
-func GetContainerPoolResources(c *v1.Container) (string, int64, int64) {
-	var pool string = DefaultPool
+func GetContainerPoolResources(p *v1.Pod, c *v1.Container) (string, int64, int64) {
+	var pool string
 	var req, lim int64
 
+	if p.ObjectMeta.Namespace == kubeapi.NamespaceSystem {
+		pool = ReservedPool
+	} else {
+		pool = DefaultPool
+	}
+
 	if c.Resources.Requests == nil {
-		return DefaultPool, 0, 0
+		return pool, 0, 0
 	}
 
 	for name, _ := range c.Resources.Requests {
@@ -557,11 +564,10 @@ func (ps *PoolSet) AllocateCPU(id string, pool string, milliCPU int64) (cpuset.C
 	ps.containers[id] = &Container{
 		id:   id,
 		pool: pool,
-		cpus: cpuset.NewCPUSet(),
+		cpus: p.shared.Clone(),
 		mCPU: milliCPU,
 	}
 
-	cpus = p.shared.Clone()
 	p.used += milliCPU
 
 	glog.Infof("[cpumanager] allocated %dm of %s/CPU:%s for container %s", milliCPU, pool, cpus.String(), id)
@@ -680,8 +686,8 @@ func (ps *PoolSet) GetPoolCPUSet(pool string) (cpuset.CPUSet, bool) {
 		return cpuset.NewCPUSet(), false
 	}
 
-	if pool == DefaultPool {
-		return p.shared.Union(ps.pools[ReservedPool].shared), true
+	if pool == DefaultPool || pool == ReservedPool {
+		return ps.pools[DefaultPool].shared.Union(ps.pools[ReservedPool].shared), true
 	} else {
 		return p.shared.Clone(), true
 	}
