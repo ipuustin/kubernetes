@@ -130,7 +130,7 @@ func (s *stateMemory) SetAllocator(allocfn pool.AllocCpuFunc, t *topology.CPUTop
 	return
 }
 
-func (s *stateMemory) Reconfigure(cfg pool.Config) error {
+func (s *stateMemory) Reconfigure(cfg pool.NodeConfig) error {
 	return nil
 }
 

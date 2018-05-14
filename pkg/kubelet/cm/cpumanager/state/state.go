@@ -53,7 +53,7 @@ type writer interface {
 	Delete(containerID string)
 	ClearState()
 	SetAllocator(allocfn pool.AllocCpuFunc, t *topology.CPUTopology)
-	Reconfigure(cfg pool.Config) error
+	Reconfigure(cfg pool.NodeConfig) error
 	AllocateCPUs(containerID string, pool string, numCPUs int) (cpuset.CPUSet, error)
 	AllocateCPU(containerID string, pool string, milliCPU int64) (cpuset.CPUSet, error)
 	ReleaseCPU(containerID string)

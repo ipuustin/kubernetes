@@ -74,7 +74,7 @@ type staticPolicy struct {
 	// cpu socket topology
 	topology *topology.CPUTopology
 	// pool configuration
-	poolCfg pool.Config
+	poolCfg pool.NodeConfig
 }
 
 // Ensure staticPolicy implements Policy interface
@@ -84,7 +84,7 @@ var _ Policy = &staticPolicy{}
 // assignments for exclusively pinned guaranteed containers after the main
 // container process starts.
 func NewStaticPolicy(topology *topology.CPUTopology, numReservedCPUs int, cpuPoolConfig map[string]string) Policy {
-	cfg, err := pool.DefaultConfig(topology, takeByTopology, numReservedCPUs, cpuPoolConfig)
+	cfg, err := pool.DefaultNodeConfig(numReservedCPUs, cpuPoolConfig)
 	if err != nil {
 		panic(fmt.Errorf("[cpumanager] failed to set up default CPU pools: %v", err))
 	}
@@ -104,7 +104,7 @@ func (p *staticPolicy) Start(s state.State) {
 
 	cfg := p.poolCfg
 	reserved, _ := cfg[pool.ReservedPool]
-	glog.Infof("[cpumanager] reserved %d CPUs (\"%s\") not available for exclusive assignment", reserved.Size(), reserved)
+	glog.Infof("[cpumanager] reserved %d CPUs (\"%s\") not available for exclusive assignment", reserved.Size)
 
 	if err := s.Reconfigure(cfg); err != nil {
 		glog.Errorf("[cpumanager] static policy failed to start: %s\n", err.Error())

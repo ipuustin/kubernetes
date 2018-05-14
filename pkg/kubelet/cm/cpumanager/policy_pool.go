@@ -37,7 +37,7 @@ type poolPolicy struct {
 	// cpu socket topology
 	topology *topology.CPUTopology
 	// pool configuration
-	poolCfg pool.Config
+	poolCfg pool.NodeConfig
 	// pool usage/stats cache
 	stats poolcache.PoolCache
 }
@@ -49,7 +49,7 @@ var _ Policy = &poolPolicy{}
 // and exclusive allocations from named and preconfigured pools of CPU
 // cores.
 func NewPoolPolicy(topology *topology.CPUTopology, numReservedCPUs int, cpuPoolConfig map[string]string) Policy {
-	cfg, err := pool.ParseConfig(topology, takeByTopology, numReservedCPUs, cpuPoolConfig)
+	cfg, err := pool.ParseNodeConfig(numReservedCPUs, cpuPoolConfig)
 	if err != nil {
 		panic(fmt.Errorf("[cpumanager] failed to parse pool configuration %v: %v", cpuPoolConfig, err))
 	}
@@ -89,6 +89,7 @@ func (p *poolPolicy) validateState(s state.State) error {
 	// Check that all shared sets of CPU pools are disjoint.
 	cpus := cpuset.NewCPUSet()
 	for name, cset := range pools {
+		glog.Infof("*** pool %s: cpus %s", name, cset.String())
 		if !cpus.Intersection(cset).IsEmpty() {
 			return fmt.Errorf("[cpumanager] pool %s (%s) has overlapping CPUs with another pool", name, cset)
 		}

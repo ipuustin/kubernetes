@@ -215,7 +215,7 @@ func (sf *stateFile) SetAllocator(allocfn pool.AllocCpuFunc, t *topology.CPUTopo
 	sf.pools.SetAllocator(allocfn, t)
 }
 
-func (sf *stateFile) Reconfigure(cfg pool.Config) error {
+func (sf *stateFile) Reconfigure(cfg pool.NodeConfig) error {
 	sf.Lock()
 	defer sf.Unlock()
 
