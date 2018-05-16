@@ -24,14 +24,14 @@ import (
 	// "github.com/golang/glog"
 	// "k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/state"
 	// "k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/topology"
-	stats "k8s.io/kubernetes/pkg/kubelet/apis/stats/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	stats "k8s.io/kubernetes/pkg/kubelet/apis/stats/v1alpha1"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 )
 
 type poolCache struct {
 	sync.RWMutex
-	pools map[string]stats.CPUPoolUsage
+	pools       map[string]stats.CPUPoolUsage
 	initialized bool
 }
 
@@ -51,7 +51,7 @@ var cache *poolCache
 func NewCPUPoolCache() PoolCache {
 	if cache == nil {
 		cache = &poolCache{
-			pools: make(map[string]stats.CPUPoolUsage),
+			pools:       make(map[string]stats.CPUPoolUsage),
 			initialized: false,
 		}
 	}
@@ -70,16 +70,16 @@ func (c *poolCache) UpdatePool(pool string, shared, exclusive cpuset.CPUSet, cap
 	p, ok := c.pools[pool]
 	if !ok {
 		p = stats.CPUPoolUsage{
-			Name:          pool,
-			Containers:    make(map[string]stats.CPUPoolContainer),
+			Name:       pool,
+			Containers: make(map[string]stats.CPUPoolContainer),
 		}
 		c.pools[pool] = p
 	}
 
-	p.SharedCPUs    = shared.String()
+	p.SharedCPUs = shared.String()
 	p.ExclusiveCPUs = exclusive.String()
-	p.Capacity      = capacity
-	p.Usage         = usage
+	p.Capacity = capacity
+	p.Usage = usage
 }
 
 func (c *poolCache) AddContainer(pool, cid, pod, name string, cpu int64) {
@@ -110,8 +110,16 @@ func (c *poolCache) GetCPUPoolStats() stats.CPUPoolStats {
 	c.RLock()
 	defer c.RUnlock()
 
-	// should create a copy here
-	return stats.CPUPoolStats{}
+	pools := make(map[string]stats.CPUPoolUsage)
+
+	for pool, usage := range c.pools {
+		pools[pool] = usage
+	}
+
+	return stats.CPUPoolStats{
+		Time:  metav1.NewTime(time.Now()),
+		Pools: pools,
+	}
 }
 
 func (c *poolCache) IsInitialized() bool {
