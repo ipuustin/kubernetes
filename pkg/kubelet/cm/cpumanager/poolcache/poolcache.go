@@ -110,8 +110,16 @@ func (c *poolCache) GetCPUPoolStats() stats.CPUPoolStats {
 	c.RLock()
 	defer c.RUnlock()
 
-	// should create a copy here
-	return stats.CPUPoolStats{}
+	pools := make(map[string]stats.CPUPoolUsage)
+
+	for pool, usage := range c.pools {
+		pools[pool] = usage
+	}
+
+	return stats.CPUPoolStats{
+		Time:  metav1.NewTime(time.Now()),
+		Pools: pools,
+	}
 }
 
 func (c *poolCache) IsInitialized() bool {
