@@ -69,12 +69,12 @@ func (p *poolPolicy) Start(s state.State) {
 	s.SetAllocator(takeByTopology, p.topology)
 
 	if err := s.Reconfigure(p.poolCfg); err != nil {
-		glog.Errorf("[cpumanager] pool policy failed to start: %s\n", err.Error())
+		glog.Errorf("[cpumanager] pool policy failed to start: %s", err.Error())
 		panic("[cpumanager] - please drain node and remove policy state file")
 	}
 
 	if err := p.validateState(s); err != nil {
-		glog.Errorf("[cpumanager] pool policy invalid state: %s\n", err.Error())
+		glog.Errorf("[cpumanager] pool policy invalid state: %s", err.Error())
 		panic("[cpumanager] - please drain node and remove policy state file")
 	}
 }
@@ -89,7 +89,6 @@ func (p *poolPolicy) validateState(s state.State) error {
 	// Check that all shared sets of CPU pools are disjoint.
 	cpus := cpuset.NewCPUSet()
 	for name, cset := range pools {
-		glog.Infof("*** pool %s: cpus %s", name, cset.String())
 		if !cpus.Intersection(cset).IsEmpty() {
 			return fmt.Errorf("[cpumanager] pool %s (%s) has overlapping CPUs with another pool", name, cset)
 		}

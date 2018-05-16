@@ -64,13 +64,13 @@ import (
 	admission "k8s.io/kubernetes/plugin/pkg/admission/cpupool"
 )
 
-// Predefined CPU pool names.
 const (
-	Prefix       = admission.ResourcePrefix // prefix for CPU pool resources
-	IgnoredPool  = admission.IgnoredPool    // CPUs we have to ignore
-	OfflinePool  = admission.OfflinePool    // CPUs which are offline
-	ReservedPool = admission.ReservedPool   // CPUs reserved for kube and system
-	DefaultPool  = admission.DefaultPool    // CPUs in the default set
+	logPrefix      = "[cpumanager/pool] "     // log message prefix
+	ResourcePrefix = admission.ResourcePrefix // prefix for CPU pool resources
+	IgnoredPool    = admission.IgnoredPool    // CPUs we have to ignore
+	OfflinePool    = admission.OfflinePool    // CPUs which are offline
+	ReservedPool   = admission.ReservedPool   // CPUs reserved for kube and system
+	DefaultPool    = admission.DefaultPool    // CPUs in the default set
 )
 
 // CPU allocation flags
@@ -98,15 +98,15 @@ type Container struct {
 	id   string         // container ID
 	pool string         // assigned pool
 	cpus cpuset.CPUSet  // exclusive CPUs, if any
-	mCPU int64          // requested milliCPUs
+	req  int64          // requested milliCPUs
 }
 
 // A CPU pool is a set of cores, typically set aside for a class of workloads.
 type Pool struct {
-	shared cpuset.CPUSet    // shared set of CPUs
-	exclusive cpuset.CPUSet // exclusively allocated CPUs
-	used int64              // total allocations in shared set
-	cfg *Config             // (requested) configuration
+	shared  cpuset.CPUSet // shared set of CPUs
+	pinned  cpuset.CPUSet // exclusively allocated CPUs
+	used    int64         // total allocations in shared set
+	cfg    *Config        // (requested) configuration
 }
 
 // A CPU allocator function.
@@ -135,7 +135,7 @@ func DefaultNodeConfig(numReservedCPUs int, cpuPoolConfig map[string]string) (No
 	}
 
 	if cpuPoolConfig != nil {
-		glog.Warningf("[cpumanager] ignoring given CPU pool config %v", cpuPoolConfig)
+		logWarning("ignoring given CPU pool config %v", cpuPoolConfig)
 	}
 
 	return cfg, nil
@@ -176,7 +176,7 @@ func ParseNodeConfig(numReservedCPUs int, cpuPoolConfig map[string]string) (Node
 
 	if c, ok := cfg[ReservedPool]; ok {
 		if c.Size != numReservedCPUs {
-			glog.Warningf("[cpumanager] setting reserved pool size to %d CPUs (was %d)",
+			logWarning("setting reserved pool size to %d CPUs (was %d)",
 				numReservedCPUs, c.Size)
 			c.Size = numReservedCPUs
 		}
@@ -205,8 +205,8 @@ func GetContainerPoolResources(p *v1.Pod, c *v1.Container) (string, int64, int64
 	}
 
 	for name, _ := range c.Resources.Requests {
-		if strings.HasPrefix(name.String(), Prefix) {
-			pool = strings.TrimPrefix(name.String(), Prefix)
+		if strings.HasPrefix(name.String(), ResourcePrefix) {
+			pool = strings.TrimPrefix(name.String(), ResourcePrefix)
 			break
 		}
 	}
@@ -224,7 +224,7 @@ func GetContainerPoolResources(p *v1.Pod, c *v1.Container) (string, int64, int64
 
 // Create a new CPU pool set with the given configuration.
 func NewPoolSet(cfg NodeConfig) (*PoolSet, error) {
-	glog.Infof("[cpumanager]: creating new CPU pool set")
+	logInfo("creating new CPU pool set")
 
 	var ps *PoolSet = &PoolSet{
 		pools:      make(map[string]*Pool),
@@ -245,7 +245,7 @@ func (ps *PoolSet) Verify() error {
 
 	for _, name := range required {
 		if _, ok := ps.pools[name]; !ok {
-			return fmt.Errorf("[cpumanager]: missing %s pool", name)
+			return fmt.Errorf("missing %s pool", name)
 		}
 	}
 
@@ -297,21 +297,21 @@ func (ps *PoolSet) Reconfigure(cfg NodeConfig) error {
 		return err
 	}
 
-	glog.Infof("[cpumanager]: reconfiguring CPU pools with %v", cfg)
+	logInfo("reconfiguring CPU pools with %v", cfg)
 
 	// update configuration for existing pools
 	for name, c := range cfg {
 		if p, ok := ps.pools[name]; !ok {
 			ps.pools[name] = &Pool{
-				shared:    cpuset.NewCPUSet(),
-				exclusive: cpuset.NewCPUSet(),
-				cfg:       c,
+				shared: cpuset.NewCPUSet(),
+				pinned: cpuset.NewCPUSet(),
+				cfg:    c,
 			}
 		} else {
 			p.cfg = c
 		}
 	
-		glog.Infof("[cpumanager] configured pool %s: %v", name, ps.pools[name].cfg)
+		logInfo("configured pool %s: %v", name, ps.pools[name].cfg)
 	}
 
 	// mark removed pools for removal
@@ -332,7 +332,7 @@ func (ps *PoolSet) Reconfigure(cfg NodeConfig) error {
 
 // Is pool idle ?
 func (p *Pool) isIdle() bool {
-	if p.used == 0 && p.exclusive.IsEmpty() {
+	if p.used == 0 && p.pinned.IsEmpty() {
 		return true
 	}
 
@@ -380,10 +380,10 @@ func (p *Pool) isUptodate() bool {
 	}
 
 	if p.cfg.Cpus != nil {
-		return p.cfg.Cpus.Equals(p.shared.Union(p.exclusive))
+		return p.cfg.Cpus.Equals(p.shared.Union(p.pinned))
 	}
 
-	if p.cfg.Size == p.shared.Union(p.exclusive).Size() {
+	if p.cfg.Size == p.shared.Union(p.pinned).Size() {
 		return true
 	}
 
@@ -392,7 +392,7 @@ func (p *Pool) isUptodate() bool {
 
 // Remove up idle pools which have been removed from the configuration.
 func (ps *PoolSet) removeIdlePools(unused cpuset.CPUSet) cpuset.CPUSet {
-	glog.Infof("[cpumanager] removing unused idle pools...")
+	logInfo("removing unused idle pools...")
 
 	for name, p := range ps.pools {
 		if name == ReservedPool || name == DefaultPool || !p.isRemovable() {
@@ -402,7 +402,7 @@ func (ps *PoolSet) removeIdlePools(unused cpuset.CPUSet) cpuset.CPUSet {
 		unused = unused.Union(p.shared)
 		delete(ps.pools, name)
 
-		glog.Infof("[cpumanager]   removed pool '%s'", name)
+		logInfo("   removed unused idle pool '%s'", name)
 	}
 
 	return unused
@@ -410,7 +410,7 @@ func (ps *PoolSet) removeIdlePools(unused cpuset.CPUSet) cpuset.CPUSet {
 
 // Shrink oversized pools.
 func (ps *PoolSet) shrinkPools(unused cpuset.CPUSet) cpuset.CPUSet {
-	glog.Infof("[cpumanager] shrinking pools...")
+	logInfo("shrinking pools...")
 
 	for name, p := range ps.pools {
 		if !p.isShrinkable() {
@@ -431,7 +431,7 @@ func (ps *PoolSet) shrinkPools(unused cpuset.CPUSet) cpuset.CPUSet {
 
 		unused = unused.Union(p.shared.Difference(shrunk))
 
-		glog.Infof("[cpumanager] shrunk pool %s (shared %s -> %s)", name,
+		logInfo("shrunk pool %s (shared %s -> %s)", name,
 			p.shared.String(), shrunk.String())
 
 		p.shared = shrunk
@@ -472,12 +472,12 @@ func (ps *PoolSet) allocateReservedPool(free cpuset.CPUSet) cpuset.CPUSet {
 		}
 	}
 
-	glog.Infof("[cpumanager] allocated reserved pool: %s, free set now: %s",
-		r.shared.Union(r.exclusive).String(), free.String())
+	logInfo("allocated reserved pool: %s, free set now: %s",
+		r.shared.Union(r.pinned).String(), free.String())
 
-	if r.shared.Union(r.exclusive).Size() < r.cfg.Size {
-		glog.Errorf("[cpumanager] reserved pool has insufficient cpus %s (need %d)",
-			r.shared.Union(r.exclusive).String(), r.cfg.Size)
+	if r.shared.Union(r.pinned).Size() < r.cfg.Size {
+		logError("reserved pool has insufficient cpus %s (need %d)",
+			r.shared.Union(r.pinned).String(), r.cfg.Size)
 	}
 
 	return free
@@ -485,14 +485,14 @@ func (ps *PoolSet) allocateReservedPool(free cpuset.CPUSet) cpuset.CPUSet {
 
 // Allocate pools specified by explicit CPU ids.
 func (ps *PoolSet) allocatePinnedPools(free cpuset.CPUSet) cpuset.CPUSet {
-	glog.Infof("[cpumanager] allocating pinned pools...")
+	logInfo("allocating pinned pools...")
 
 	for name, p := range ps.pools {
 		if p.isUptodate() || !p.isPinned() {
 			continue
 		}
 
-		glog.Infof("[cpumanager] pinned pool %s...", name)
+		logInfo("pinned pool %s...", name)
 
 		avail := p.cfg.Cpus.Intersection(free)
 		if avail.IsEmpty() {
@@ -502,7 +502,7 @@ func (ps *PoolSet) allocatePinnedPools(free cpuset.CPUSet) cpuset.CPUSet {
 		p.shared = p.shared.Union(avail)
 		free = free.Difference(avail)
 
-		glog.Infof("[cpumanager]   pool %s: added CPUs %s", name, avail.String())
+		logInfo("  pool %s: added CPUs %s", name, avail.String())
 	}
 
 	return free
@@ -510,14 +510,14 @@ func (ps *PoolSet) allocatePinnedPools(free cpuset.CPUSet) cpuset.CPUSet {
 
 // Allocate pool specificed by size.
 func (ps *PoolSet) allocateSizedPools(free cpuset.CPUSet) cpuset.CPUSet {
-	glog.Infof("[cpumanager] allocating unpinned pools (from set %s)...", free.String())
+	logInfo("allocating unpinned pools (from set %s)...", free.String())
 
 	for _, p := range ps.pools {
 		if p.isUptodate() || p.isPinned() {
 			continue
 		}
 
-		more := p.cfg.Size - (p.shared.Size() + p.exclusive.Size())
+		more := p.cfg.Size - (p.shared.Size() + p.pinned.Size())
 
 		if more <= 0 {
 			continue
@@ -539,7 +539,7 @@ func (ps *PoolSet) allocateSizedPools(free cpuset.CPUSet) cpuset.CPUSet {
 func (ps *PoolSet) freeCPUs() cpuset.CPUSet {
 	cpus := ps.topology.CPUDetails.CPUs()
 	for _, p := range ps.pools {
-		cpus = cpus.Difference(p.shared.Union(p.exclusive))
+		cpus = cpus.Difference(p.shared.Union(p.pinned))
 	}
 
 	return cpus
@@ -548,11 +548,11 @@ func (ps *PoolSet) freeCPUs() cpuset.CPUSet {
 // Run one round of reconcilation of the CPU pool set configuration.
 func (ps *PoolSet) ReconcileConfig() (bool, error) {
 	if !ps.reconcile {
-		glog.Infof("[cpumanager] pools configuration is up to date")
+		logInfo("pools configuration is up to date")
 		return false, nil
 	}
 
-	glog.Infof("[cpumanager]: pool configuration needs reconcilation...")
+	logInfo("pool configuration needs reconcilation...")
 
 	free := ps.freeCPUs()
 
@@ -579,28 +579,28 @@ func (ps *PoolSet) ReconcileConfig() (bool, error) {
 
 	ps.reconcile = false
 
-	glog.Infof("[cpumanager] reconciled pool state:")
+	logInfo("reconciled pool state:")
 	for name, p := range ps.pools {
 		ps.reconcile = ps.reconcile || !p.isUptodate()
 
-		glog.Infof("[cpumanager] * pool %s:", name)
-		glog.Infof("[cpumanager]    - cpus: shared %s, exclusive %s",
-			p.shared.String(), p.exclusive.String())
+		logInfo("* pool %s:", name)
+		logInfo("   - cpus: shared %s, exclusive %s",
+			p.shared.String(), p.pinned.String())
 		if p.cfg == nil {
-			glog.Infof("[cpumanager]    - scheduled for removal")
+			logInfo("   - scheduled for removal")
 		} else {
 			if p.cfg.Cpus != nil {
-				glog.Infof("[cpumanager]    - cfg: %s", p.cfg.Cpus.String())
+				logInfo("   - cfg: %s", p.cfg.Cpus.String())
 			} else {
-				glog.Infof("[cpumanager]    - cfg: %d cpus", p.cfg.Size)
+				logInfo("   - cfg: %d cpus", p.cfg.Size)
 			}
 		}
 	}
 
 	if ps.reconcile {
-		glog.Infof("[cpumanager] pool set needs further reconcilation")
+		logInfo("pool set needs further reconcilation")
 	} else {
-		glog.Infof("[cpumanager] pool set now up to date")
+		logInfo("pool set now up to date")
 	}
 
 	return false, nil
@@ -614,7 +614,7 @@ func (ps *PoolSet) SetAllocator(allocfn AllocCpuFunc, topo *topology.CPUTopology
 
 func checkAllowedPool(pool string) error {
 	if pool == IgnoredPool || pool == OfflinePool {
-		return fmt.Errorf("[cpumanager] can't allocate from pool %s", pool)
+		return fmt.Errorf("can't allocate from pool %s", pool)
 	} else {
 		return nil
 	}
@@ -636,7 +636,7 @@ func (ps *PoolSet) AllocateCPUs(id string, pool string, numCPUs int) (cpuset.CPU
 
 	p, ok := ps.pools[pool]
 	if !ok {
-		return cpuset.NewCPUSet(), fmt.Errorf("[cpumanager] non-existent pool %s", pool)
+		return cpuset.NewCPUSet(), fmt.Errorf("non-existent pool %s", pool)
 	}
 
 	cpus, err := ps.allocfn(ps.topology, p.shared, numCPUs)
@@ -645,22 +645,22 @@ func (ps *PoolSet) AllocateCPUs(id string, pool string, numCPUs int) (cpuset.CPU
 	}
 
 	p.shared = p.shared.Difference(cpus)
-	p.exclusive = p.exclusive.Union(cpus)
+	p.pinned = p.pinned.Union(cpus)
 
 	ps.containers[id] = &Container{
 		id:   id,
 		pool: pool,
 		cpus: cpus,
-		mCPU: int64(cpus.Size()) * 1000,
+		req:  int64(cpus.Size()) * 1000,
 	}
 
-	glog.Infof("[cpumanager] allocated %s/CPU:%s for container %s", pool, cpus.String(), id)
+	logInfo("allocated %s/CPU:%s for container %s", pool, cpus.String(), id)
 
 	return cpus.Clone(), nil
 }
 
 // Allocate CPU for a container from a pool.
-func (ps *PoolSet) AllocateCPU(id string, pool string, milliCPU int64) (cpuset.CPUSet, error) {
+func (ps *PoolSet) AllocateCPU(id string, pool string, req int64) (cpuset.CPUSet, error) {
 	var cpus cpuset.CPUSet
 
 	if err := checkAllowedPool(pool); err != nil {
@@ -669,19 +669,19 @@ func (ps *PoolSet) AllocateCPU(id string, pool string, milliCPU int64) (cpuset.C
 
 	p, ok := ps.pools[pool]
 	if !ok {
-		return cpuset.NewCPUSet(), fmt.Errorf("[cpumanager] pool %s not found", pool)
+		return cpuset.NewCPUSet(), fmt.Errorf("pool %s not found", pool)
 	}
 
 	ps.containers[id] = &Container{
 		id:   id,
 		pool: pool,
 		cpus: cpuset.NewCPUSet(),
-		mCPU: milliCPU,
+		req:  req,
 	}
 
-	p.used += milliCPU
+	p.used += req
 
-	glog.Infof("[cpumanager] allocated %dm of %s/CPU:%s for container %s", milliCPU, pool, p.shared.String(), id)
+	logInfo("allocated %dm of %s/CPU:%s for container %s", req, pool, p.shared.String(), id)
 
 	return cpus, nil
 }
@@ -690,7 +690,7 @@ func (ps *PoolSet) AllocateCPU(id string, pool string, milliCPU int64) (cpuset.C
 func (ps *PoolSet) ReleaseCPU(id string) {
 	c, ok := ps.containers[id]
 	if !ok {
-		glog.Warningf("[cpumanager] couldn't find allocations for container %s", id)
+		logWarning("couldn't find allocations for container %s", id)
 		return
 	}
 
@@ -698,18 +698,18 @@ func (ps *PoolSet) ReleaseCPU(id string) {
 
 	p, ok := ps.pools[c.pool]
 	if !ok {
-		glog.Warningf("[cpumanager] couldn't find pool %s for container %s", c.pool, id)
+		logWarning("couldn't find pool %s for container %s", c.pool, id)
 		return
 	}
 
 	if c.cpus.IsEmpty() {
-		p.used -= c.mCPU
-		glog.Infof("cpumanager] released %dm of %s/CPU:%s for container %s", c.mCPU, c.pool, p.shared.String(), c.id)
+		p.used -= c.req
+		logInfo("cpumanager] released %dm of %s/CPU:%s for container %s", c.req, c.pool, p.shared.String(), c.id)
 	} else {
 		p.shared    = p.shared.Union(c.cpus)
-		p.exclusive = p.exclusive.Difference(c.cpus)
+		p.pinned = p.pinned.Difference(c.cpus)
 
-		glog.Infof("[cpumanager] released %s/CPU:%s for container %s", c.pool, p.shared.String(), c.id)
+		logInfo("released %s/CPU:%s for container %s", c.pool, p.shared.String(), c.id)
 	}
 
 	ps.ReconcileConfig()
@@ -728,8 +728,8 @@ func (ps *PoolSet) GetPoolCapacity() v1.ResourceList {
 	cap := v1.ResourceList{}
 
 	for name, p := range ps.pools {
-		qty := 1000 * (p.shared.Size() + p.exclusive.Size())
-		res := v1.ResourceName(Prefix + name)
+		qty := 1000 * (p.shared.Size() + p.pinned.Size())
+		res := v1.ResourceName(ResourcePrefix + name)
 		cap[res] = *resource.NewQuantity(int64(qty), resource.DecimalSI)
 	}
 
@@ -824,7 +824,7 @@ func (ps *PoolSet) getPoolCPUSets(pool string) (int64, cpuset.CPUSet, cpuset.CPU
 
 	if p, ok := ps.pools[pool]; ok {
 		s = p.shared.Clone()
-		e = p.exclusive.Clone()
+		e = p.pinned.Clone()
 	} else {
 		s = cpuset.NewCPUSet()
 		e = cpuset.NewCPUSet()
@@ -837,20 +837,20 @@ func (ps *PoolSet) getPoolCPUSets(pool string) (int64, cpuset.CPUSet, cpuset.CPU
 func (ps *PoolSet) getPoolUsage(pool string) int64 {
 	p := ps.pools[pool]
 
-	return int64(1000 * int64(p.exclusive.Size()) + p.used)
+	return int64(1000 * int64(p.pinned.Size()) + p.used)
 }
 
 // Get the total size of a pool (in CPUs).
 func (ps *PoolSet) getPoolSize(pool string) int {
 	p := ps.pools[pool]
 
-	return p.shared.Size() + p.exclusive.Size()
+	return p.shared.Size() + p.pinned.Size()
 }
 
 // Get the total CPU capacity for the given pool (in MilliCPUs).
 func (ps *PoolSet) getPoolCapacity(pool string) int64 {
 	p := ps.pools[pool]
-	n := p.shared.Size() + p.exclusive.Size()
+	n := p.shared.Size() + p.pinned.Size()
 
 	return int64(1000 * n)
 }
@@ -863,7 +863,37 @@ func (ps *PoolSet) updatePoolMetrics(pool string) {
 }
 
 //
-// JSON mashalling and unmarshalling
+// errors and logging
+//
+
+func logFormat(format string, args... interface{}) string {
+	return fmt.Sprintf(logPrefix + format, args...)
+}
+
+func logVerbose(level glog.Level, format string, args... interface{}) {
+	glog.V(level).Infof(logFormat(logPrefix + format, args...))
+}
+
+func logInfo(format string, args... interface{}) {
+	glog.Info(logFormat(format, args...))
+}
+
+func logWarning(format string, args... interface{}) {
+	glog.Warningf(logFormat(format, args...))
+}
+
+func logError(format string, args... interface{}) {
+	glog.Errorf(logFormat(format, args...))
+}
+
+func logFatal(format string, args... interface{}) {
+	glog.Fatalf(logFormat(format, args...))
+}
+
+
+
+//
+// JSON marshalling and unmarshalling
 //
 
 // Container JSON marshalling interface
@@ -871,7 +901,7 @@ type marshalContainer struct {
 	Id   string        `json:"id"`
 	Pool string        `json:"pool"`
 	Cpus cpuset.CPUSet `json:"cpus"`
-	MCPU int64         `json:"mCPU"`
+	Req  int64         `json:"req"`
 }
 
 func (pc Container) MarshalJSON() ([]byte, error) {
@@ -879,7 +909,7 @@ func (pc Container) MarshalJSON() ([]byte, error) {
 		Id:   pc.id,
 		Pool: pc.pool,
 		Cpus: pc.cpus,
-		MCPU: pc.mCPU,
+		Req:  pc.req,
 	})
 }
 
@@ -893,25 +923,25 @@ func (pc *Container) UnmarshalJSON(b []byte) error {
 	pc.id   = m.Id
 	pc.pool = m.Pool
 	pc.cpus = m.Cpus
-	pc.mCPU = m.MCPU
+	pc.req  = m.Req
 
 	return nil
 }
 
 // Pool JSON marshalling interface
 type marshalPool struct {
-	Shared      cpuset.CPUSet `json:"shared"`
-	Exclusive   cpuset.CPUSet `json:"exclusive"`
-	Used        int64         `json:"used"`
-	Cfg       *Config         `json:"cfg,omitempty"`
+	Shared  cpuset.CPUSet `json:"shared"`
+	Pinned  cpuset.CPUSet `json:"exclusive"`
+	Used    int64         `json:"used"`
+	Cfg    *Config        `json:"cfg,omitempty"`
 }
 
 func (p Pool) MarshalJSON() ([]byte, error) {
 	return json.Marshal(marshalPool{
-		Shared:    p.shared,
-		Exclusive: p.exclusive,
-		Used:      p.used,
-		Cfg:       p.cfg,
+		Shared: p.shared,
+		Pinned: p.pinned,
+		Used:   p.used,
+		Cfg:    p.cfg,
 	})
 }
 
@@ -922,24 +952,26 @@ func (p *Pool) UnmarshalJSON(b []byte) error {
 		return err
 	}
 
-	p.shared    = m.Shared
-	p.exclusive = m.Exclusive
-	p.used      = m.Used
-	p.cfg       = m.Cfg
+	p.shared = m.Shared
+	p.pinned = m.Pinned
+	p.used   = m.Used
+	p.cfg    = m.Cfg
 
 	return nil
 }
 
 // PoolSet JSON marshalling interface
 type marshalPoolSet struct {
-	Pools      map[string]*Pool          `json:"pools"`
-	Containers map[string]*Container     `json:"containers"`
+	Pools      map[string]*Pool      `json:"pools"`
+	Containers map[string]*Container `json:"containers"`
+	Reconcile  bool                  `json:"reconcile"`
 }
 
 func (ps PoolSet) MarshalJSON() ([]byte, error) {
 	return json.Marshal(marshalPoolSet{
 		Pools:      ps.pools,
 		Containers: ps.containers,
+		Reconcile:  ps.reconcile,
 	})
 }
 
@@ -952,6 +984,7 @@ func (ps *PoolSet) UnmarshalJSON(b []byte) error {
 
 	ps.pools      = m.Pools
 	ps.containers = m.Containers
+	ps.reconcile  = m.Reconcile
 	ps.stats      = poolcache.GetCPUPoolCache()
 
 	return nil
