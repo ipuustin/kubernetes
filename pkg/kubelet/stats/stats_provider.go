@@ -18,7 +18,6 @@ package stats
 
 import (
 	"fmt"
-	"time"
 
 	cadvisorapiv1 "github.com/google/cadvisor/info/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -142,42 +141,14 @@ func (p *StatsProvider) RootFsStats() (*statsapi.FsStats, error) {
 // CPUPoolStats returns the stats of the CPU Manager pool policy.
 func (p *StatsProvider) CPUPoolStats() (*statsapi.CPUPoolStats, error) {
 	cache := poolcache.GetCPUPoolCache()
+
 	if !cache.IsInitialized() {
 		return nil, nil
 	}
 
-	_ = metav1.NewTime(time.Now())
+	poolstats := cache.GetCPUPoolStats()
 
-	return nil, nil
-
-/*
-	pools := cache.GetCPUPoolStats()
-	containers := cache.GetCPUPoolContainers()
-
-	poolStats := make([]statsapi.PoolStats, len(*pools))
-	i := 0
-
-	for pool, cpuset := range *pools {
-		cids := make([]string, 0)
-		for cid, containerPool := range *containers {
-			if pool == containerPool {
-				cids = append(cids, cid)
-			}
-		}
-
-		poolStats[i] = statsapi.PoolStats{
-			Name:       pool,
-			CpuList:    cpuset.String(),
-			Containers: cids,
-		}
-		i++
-	}
-
-	return &statsapi.CPUPoolStats{
-		Time:  metav1.NewTime(time.Now()),
-		Pools: poolStats,
-	}, nil
-*/
+	return &poolstats, nil
 }
 
 // GetContainerInfo returns stats (from cAdvisor) for a container.

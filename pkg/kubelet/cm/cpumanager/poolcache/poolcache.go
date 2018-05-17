@@ -31,8 +31,7 @@ import (
 
 type poolCache struct {
 	sync.RWMutex
-	pools       map[string]stats.CPUPoolUsage
-	initialized bool
+	pools map[string]stats.CPUPoolUsage
 }
 
 type PoolCache interface {
@@ -51,8 +50,7 @@ var cache *poolCache
 func NewCPUPoolCache() PoolCache {
 	if cache == nil {
 		cache = &poolCache{
-			pools:       make(map[string]stats.CPUPoolUsage),
-			initialized: false,
+			pools: make(map[string]stats.CPUPoolUsage),
 		}
 	}
 
@@ -123,12 +121,5 @@ func (c *poolCache) GetCPUPoolStats() stats.CPUPoolStats {
 }
 
 func (c *poolCache) IsInitialized() bool {
-	if c == nil {
-		return false
-	}
-
-	c.RLock()
-	defer c.RUnlock()
-
-	return c.initialized
+	return c != nil
 }

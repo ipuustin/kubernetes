@@ -594,6 +594,7 @@ func (ps *PoolSet) ReconcileConfig() (bool, error) {
 				logInfo("   - cfg: %d cpus", p.cfg.Size)
 			}
 		}
+		ps.updatePoolMetrics(name)
 	}
 
 	if ps.reconcile {
