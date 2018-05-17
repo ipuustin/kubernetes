@@ -128,7 +128,7 @@ func (p *poolPolicy) AddContainer(s state.State, pod *v1.Pod, container *v1.Cont
 		return err
 	}
 
-	p.stats.AddContainer(pool, containerID, "", "", int64(req))
+	p.stats.AddContainer(pool, containerID, pod.Name, container.Name, int64(req))
 
 	return nil
 }
