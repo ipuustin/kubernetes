@@ -17,13 +17,11 @@ limitations under the License.
 package poolcache
 
 import (
+	"fmt"
+	"strings"
 	"sync"
 	"time"
 
-	// "fmt"
-	// "github.com/golang/glog"
-	// "k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/state"
-	// "k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/topology"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	stats "k8s.io/kubernetes/pkg/kubelet/apis/stats/v1alpha1"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
@@ -39,6 +37,7 @@ type PoolCache interface {
 	UpdatePool(pool string, shared, exclusive cpuset.CPUSet, capacity, usage int64)
 	AddContainer(pool, id, pod, name string, cpu int64)
 	RemoveContainer(pool, id string)
+	String() string
 }
 
 var _ PoolCache = &poolCache{}
@@ -70,13 +69,14 @@ func (c *poolCache) UpdatePool(pool string, shared, exclusive cpuset.CPUSet, cap
 			Name:       pool,
 			Containers: make(map[string]stats.CPUPoolContainer),
 		}
-		c.pools[pool] = p
 	}
 
 	p.SharedCPUs = shared.String()
 	p.ExclusiveCPUs = exclusive.String()
 	p.Capacity = capacity
 	p.Usage = usage
+
+	c.pools[pool] = p
 }
 
 func (c *poolCache) AddContainer(pool, cid, pod, name string, cpu int64) {
@@ -117,4 +117,18 @@ func (c *poolCache) GetCPUPoolStats() stats.CPUPoolStats {
 		Time:  metav1.NewTime(time.Now()),
 		Pools: pools,
 	}
+}
+
+func (c *poolCache) String() string {
+
+	pools := make([]string, len(c.pools))
+	i := 0
+
+	for pool, d := range c.pools {
+		pools[i] = fmt.Sprintf("pools[%s]: shared=%s, exclusive=%s, capacity=%d, usage=%d",
+			pool, d.SharedCPUs, d.ExclusiveCPUs, d.Capacity, d.Usage)
+		i++
+	}
+
+	return strings.Join(pools, "\n")
 }
