@@ -1,0 +1,7 @@
+cpupools:
+  - name: "reserved"
+    cpus: "0,1"
+  - name: "default"
+    cpus: "2,3-4"
+  - name: "special"
+    cpus: "5-6"
