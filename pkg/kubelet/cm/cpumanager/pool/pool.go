@@ -15,34 +15,34 @@ limitations under the License.
 */
 
 //
-// The pool policy uses a set of CPU pools to allocate resources to containers.
-// The pools are configured externally and are explicitly referenced by name in
-// Pod specifications. Both exclusive and shared CPU allocations are supported.
-// Exclusively allocated CPU cores are dedicated to the allocating container.
+// The pool policy maintains a set of CPU pools to allocate CPU resources to
+// containers. The pools are configured externally. Pods request CPU from a
+// particular pool explicitly by requesting a corresponding external resource
+// unique to the pool, or actually to the set of all pools with the same name
+// on different nodes).
 //
-// There is a number of pre-defined pools which special semantics. These are
-//
-//  - reserved:
-//    The reserved pool is the set of cores which system- and kube-reserved
-//    are taken from. Excess capacity, anything beyond the reserved capacity,
-//    is allocated to shared workloads in the default pool. Only containers
-//    in the kube-system namespace are allowed to allocate CPU from this pool.
-//
-//  - default:
-//    Pods which do not request any explicit pool by name are allocated CPU
-//    from the default pool.
-//
-//  - offline:
-//    Pods which are taken offline are in this pool. This pool is only used to
-//    administed the offline CPUs, allocations are not allowed from this pool.
+// There is a number of pre-defined pools which special semantics:
 //
 //  - ignored:
-//    CPUs in this pool are ignored. They can be fused outside of kubernetes.
+//    CPUs in this pool are ignored. They can be used outside of kubernetes.
 //    Allocations are not allowed from this pool.
 //
-// The actual allocation of CPU cores from the cpu set in a pool is done by an
-// externally provided function. It is usally set to the stock topology-aware
-// allocation function (takeByTopology) provided by CPUManager.
+//  - offline:
+//    CPUs in this pool are taken offline (typically to disable hyperthreading
+//    for sibling cores). This pool is only used to administer the offline CPUs,
+//    allocations are not allowed from this pool.
+//
+//  - reserved:
+//    The reserved pool is the set of CPUs dedicated to system- and kube-
+//    reserved pods and other processes.
+//
+//  - default:
+//    Pods which do not request CPU from any particular pool by name are allocated
+//    CPU from the default pool. Also, any CPU not assigned to any other pool is
+//    automatically assigned to the default pool.
+//
+// Currently there is no difference in practice between the ignored and offline
+// pools, since the actual offlining of CPUs is handled by an external component.
 //
 
 package pool
@@ -551,7 +551,7 @@ func (ps *PoolSet) allocateByCpuId() {
 	}
 }
 
-// Allocate pool specified by size.
+// Allocate pools specified by size.
 func (ps *PoolSet) allocateByCpuCount() {
 	for pool, p := range ps.pools {
 		if ps.isRemoved(pool) {
@@ -609,7 +609,7 @@ func (ps *PoolSet) ReconcileConfig() error {
 	//   6. slam any remaining CPUs to the default pool
 	//
 	// Check the pool allocations vs. configuration and if
-	// everything adds up, marks the pool set as reconciled.
+	// everything adds up, mark the pool set as reconciled.
 	// Update pool metrics at the same time.
 	//
 
