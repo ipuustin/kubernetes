@@ -595,6 +595,13 @@ func (cm *containerManagerImpl) Start(node *v1.Node,
 		return err
 	}
 
+	if utilfeature.DefaultFeatureGate.Enabled(kubefeatures.CPUManager) {
+		cb, err := cm.cpuManager.GetEndpointRegisterCallback()
+		if err == nil {
+			cm.deviceManager.SetCPUManagerCallback(cb)
+		}
+	}
+
 	return nil
 }
 

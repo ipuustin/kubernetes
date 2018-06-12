@@ -35,6 +35,7 @@ import (
 	pluginapi "k8s.io/kubernetes/pkg/kubelet/apis/deviceplugin/v1beta1"
 	"k8s.io/kubernetes/pkg/kubelet/checkpointmanager"
 	"k8s.io/kubernetes/pkg/kubelet/checkpointmanager/errors"
+	cpumanager "k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/extended"
 	"k8s.io/kubernetes/pkg/kubelet/cm/devicemanager/checkpoint"
 	"k8s.io/kubernetes/pkg/kubelet/config"
 	"k8s.io/kubernetes/pkg/kubelet/lifecycle"
@@ -87,6 +88,8 @@ type ManagerImpl struct {
 	podDevices        podDevices
 	pluginOpts        map[string]*pluginapi.DevicePluginOptions
 	checkpointManager checkpointmanager.CheckpointManager
+
+	cpuManagerCallback cpumanager.EndpointRegisterCallback
 }
 
 type sourcesReadyStub struct{}
@@ -336,6 +339,11 @@ func (m *ManagerImpl) Stop() error {
 	return nil
 }
 
+// SetCPUManagerCallback is the function for registering plugin channel for CPU manager.
+func (m *ManagerImpl) SetCPUManagerCallback(cb cpumanager.EndpointRegisterCallback) {
+	m.cpuManagerCallback = cb
+}
+
 func (m *ManagerImpl) addEndpoint(r *pluginapi.RegisterRequest) {
 	existingDevs := make(map[string]pluginapi.Device)
 	m.mutex.Lock()
@@ -353,7 +361,7 @@ func (m *ManagerImpl) addEndpoint(r *pluginapi.RegisterRequest) {
 	m.mutex.Unlock()
 
 	socketPath := filepath.Join(m.socketdir, r.Endpoint)
-	e, err := newEndpointImpl(socketPath, r.ResourceName, existingDevs, m.callback)
+	e, err := newEndpointImpl(socketPath, r.ResourceName, existingDevs, m.callback, m.cpuManagerCallback)
 	if err != nil {
 		glog.Errorf("Failed to dial device plugin with request %v: %v", r, err)
 		return

@@ -27,13 +27,15 @@ import (
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 
+	"path"
+
 	runtimeapi "k8s.io/kubernetes/pkg/kubelet/apis/cri/runtime/v1alpha2"
+	extended "k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/extended"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/state"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/topology"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 	kubecontainer "k8s.io/kubernetes/pkg/kubelet/container"
 	"k8s.io/kubernetes/pkg/kubelet/status"
-	"path"
 )
 
 // ActivePodsFunc is a function that returns a list of pods to reconcile.
@@ -65,6 +67,8 @@ type Manager interface {
 
 	// State returns a read-only interface to the internal CPU manager state.
 	State() state.Reader
+
+	GetEndpointRegisterCallback() (extended.EndpointRegisterCallback, error)
 }
 
 type manager struct {
@@ -93,6 +97,8 @@ type manager struct {
 	machineInfo *cadvisorapi.MachineInfo
 
 	nodeAllocatableReservation v1.ResourceList
+
+	endpointRegisterCallback extended.EndpointRegisterCallback
 }
 
 var _ Manager = &manager{}
@@ -100,6 +106,7 @@ var _ Manager = &manager{}
 // NewManager creates new cpu manager based on provided policy
 func NewManager(cpuPolicyName string, reconcilePeriod time.Duration, machineInfo *cadvisorapi.MachineInfo, nodeAllocatableReservation v1.ResourceList, stateFileDirecory string) (Manager, error) {
 	var policy Policy
+	var registerCallback extended.EndpointRegisterCallback
 
 	switch policyName(cpuPolicyName) {
 
@@ -132,6 +139,18 @@ func NewManager(cpuPolicyName string, reconcilePeriod time.Duration, machineInfo
 		numReservedCPUs := int(math.Ceil(reservedCPUsFloat))
 		policy = NewStaticPolicy(topo, numReservedCPUs)
 
+	case PolicyExternal:
+
+		// TODO: Get the external policy name from kubelet configuration. It's needed
+		// to get the configuration values namespaced properly.
+		name := "SomeExternalPolicyName"
+
+		// TODO: Populate the conf map from kubelet configuration data which
+		// corresponds to the external policy name.
+		conf := make(map[string]string)
+
+		policy, registerCallback = NewExternalPolicy(name, conf)
+
 	default:
 		glog.Errorf("[cpumanager] Unknown policy \"%s\", falling back to default policy \"%s\"", cpuPolicyName, PolicyNone)
 		policy = NewNonePolicy()
@@ -147,6 +166,7 @@ func NewManager(cpuPolicyName string, reconcilePeriod time.Duration, machineInfo
 		state:                      stateImpl,
 		machineInfo:                machineInfo,
 		nodeAllocatableReservation: nodeAllocatableReservation,
+		endpointRegisterCallback:   registerCallback,
 	}
 	return manager, nil
 }
@@ -204,6 +224,13 @@ func (m *manager) RemoveContainer(containerID string) error {
 
 func (m *manager) State() state.Reader {
 	return m.state
+}
+
+func (m *manager) GetEndpointRegisterCallback() (extended.EndpointRegisterCallback, error) {
+	if m.policy.Name() == string(PolicyExternal) {
+		return m.endpointRegisterCallback, nil
+	}
+	return nil, fmt.Errorf("not using extended CPU Manager policy")
 }
 
 type reconciledContainer struct {

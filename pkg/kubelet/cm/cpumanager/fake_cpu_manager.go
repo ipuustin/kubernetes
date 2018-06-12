@@ -19,6 +19,7 @@ package cpumanager
 import (
 	"github.com/golang/glog"
 	"k8s.io/api/core/v1"
+	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/extended"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/state"
 	"k8s.io/kubernetes/pkg/kubelet/status"
 )
@@ -48,6 +49,10 @@ func (m *fakeManager) RemoveContainer(containerID string) error {
 
 func (m *fakeManager) State() state.Reader {
 	return m.state
+}
+
+func (m *fakeManager) GetEndpointRegisterCallback() (extended.EndpointRegisterCallback, error) {
+	return nil, nil
 }
 
 // NewFakeManager creates empty/fake cpu manager

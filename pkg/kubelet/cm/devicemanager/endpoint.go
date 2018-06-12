@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -27,6 +28,7 @@ import (
 	"google.golang.org/grpc"
 
 	pluginapi "k8s.io/kubernetes/pkg/kubelet/apis/deviceplugin/v1beta1"
+	cpumanager "k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/extended"
 )
 
 // endpoint maps to a single registered device plugin. It is responsible
@@ -59,14 +61,13 @@ type endpointImpl struct {
 
 // newEndpoint creates a new endpoint for the given resourceName.
 // This is to be used during normal device plugin registration.
-func newEndpointImpl(socketPath, resourceName string, devices map[string]pluginapi.Device, callback monitorCallback) (*endpointImpl, error) {
+func newEndpointImpl(socketPath, resourceName string, devices map[string]pluginapi.Device, callback monitorCallback, cpuManagerCallback cpumanager.EndpointRegisterCallback) (*endpointImpl, error) {
 	client, c, err := dial(socketPath)
 	if err != nil {
 		glog.Errorf("Can't create new endpoint with path %s err %v", socketPath, err)
 		return nil, err
 	}
-
-	return &endpointImpl{
+	e := &endpointImpl{
 		client:     client,
 		clientConn: c,
 
@@ -75,7 +76,13 @@ func newEndpointImpl(socketPath, resourceName string, devices map[string]plugina
 
 		devices: devices,
 		cb:      callback,
-	}, nil
+	}
+
+	if cpuManagerCallback != nil && strings.HasPrefix(resourceName, "cpu-manager/") {
+		cpuManagerCallback(resourceName, c, &e.mutex)
+	}
+
+	return e, nil
 }
 
 // newStoppedEndpointImpl creates a new endpoint for the given resourceName with stopTime set.

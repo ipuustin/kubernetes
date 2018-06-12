@@ -1,0 +1,92 @@
+// To regenerate api.pb.go run hack/update-generated-kubelet-cpumanager.sh
+syntax = 'proto3';
+
+package v1alpha;
+
+import "github.com/gogo/protobuf/gogoproto/gogo.proto";
+
+option (gogoproto.goproto_stringer_all) = false;
+option (gogoproto.stringer_all) =  true;
+option (gogoproto.goproto_getters_all) = true;
+option (gogoproto.marshaler_all) = true;
+option (gogoproto.sizer_all) = true;
+option (gogoproto.unmarshaler_all) = true;
+option (gogoproto.goproto_unrecognized_all) = false;
+
+// ConfigData is the message sent from kubelet to CPU manager extension plugin containing the plugin configuration. This data is opaque to the kubelet.
+message ConfigDataRequest {
+	// A dictionary of configuration data
+	map<string, string> configuration = 1;
+	State state = 2;
+}
+
+// ConfigDataResponse is the message sent from CPU manager extension plugin to kubelet as a response for SetConfigData request.
+message ConfigDataResponse {
+	// Error value
+	string error = 1;
+	// Initial CPU state
+	string sharedCpuSet = 2;
+
+	// Initial HT state
+	string offlineCpuSet = 3;
+}
+
+// AddContainerRequest is the message sent from kubelet to CPU manager extension plugin indicating that a container is added.
+message AddContainerRequest {
+	// Added container ID
+	string container_id = 1;
+	State state = 2;
+
+	// TODO pod and containers specifics
+}
+
+// ContainerResponse is the message sent from CPU manager extension plugin to kubelet as a response for AddContainer request.
+message AddContainerResponse {
+	// Error value
+	string error = 1;
+	// CPUSet for shared CPUs, string representation
+	string sharedCpuSet = 2;
+	// CPUSet for exclusive CPUs, string representation
+	string exclusiveCpuSet = 3;
+	// CPUSet for to-be-offline CPUs, string representation
+	string offlineCpuSet = 4;
+}
+
+// RemoveContainerRequest is the message sent from kubelet to CPU manager extension plugin indicating that a container is gone.
+message RemoveContainerRequest {
+	// Removed container ID
+	string container_id = 1;
+	State state = 2;
+}
+
+// RemoveContainerResponse is the message sent from CPU manager extension plugin to kubelet as a response for RemoveContainer request.
+message RemoveContainerResponse {
+	// Error value
+	string error = 1;
+	// CPUSet for shared CPUs, string representation
+	string sharedCpuSet = 2;
+	// CPUSet for exclusive CPUs, string representation
+	string exclusiveCpuSet = 3;
+	// CPUSet for to-be-offline CPUs, string representation
+	string offlineCpuSet = 4;
+}
+
+message State {
+	string cpuset = 1;
+	string defaultcpuset = 2;
+	string cpusetordefault = 3;
+	// map from container to cpuset (string representation)
+	map<string, string> cpuassignments = 4;
+}
+
+// CpuManagerPlugin is the service advertised by CPU manager extension plugins
+service CpuManagerPlugin {
+	// SetConfigData configures the plugin with the state/configuration from kubelet
+	rpc SetConfigData(ConfigDataRequest) returns (ConfigDataResponse) {}
+
+	// AddContainer notifies plugin that a container has been removed.
+	rpc AddContainer(AddContainerRequest) returns (AddContainerResponse) {}
+
+	// RemoveContainer notifies plugin that a container has been removed.
+	rpc RemoveContainer(RemoveContainerRequest) returns (RemoveContainerResponse) {}
+}

@@ -19,6 +19,7 @@ package devicemanager
 import (
 	"k8s.io/api/core/v1"
 	pluginapi "k8s.io/kubernetes/pkg/kubelet/apis/deviceplugin/v1beta1"
+	cpumanager "k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/extended"
 	"k8s.io/kubernetes/pkg/kubelet/config"
 	"k8s.io/kubernetes/pkg/kubelet/lifecycle"
 	schedulercache "k8s.io/kubernetes/pkg/scheduler/cache"
@@ -60,4 +61,9 @@ func (h *ManagerStub) GetDeviceRunContainerOptions(pod *v1.Pod, container *v1.Co
 // GetCapacity simply returns nil capacity and empty removed resource list.
 func (h *ManagerStub) GetCapacity() (v1.ResourceList, v1.ResourceList, []string) {
 	return nil, nil, []string{}
+}
+
+// SetCPUManagerCallback is the function for registering plugin channel for CPU manager.
+func (h *ManagerStub) SetCPUManagerCallback(cb cpumanager.EndpointRegisterCallback) {
+	return
 }

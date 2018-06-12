@@ -185,7 +185,7 @@ func esetup(t *testing.T, devs []*pluginapi.Device, socket, resourceName string,
 	err := p.Start()
 	require.NoError(t, err)
 
-	e, err := newEndpointImpl(socket, resourceName, make(map[string]pluginapi.Device), callback)
+	e, err := newEndpointImpl(socket, resourceName, make(map[string]pluginapi.Device), callback, nil)
 	require.NoError(t, err)
 
 	return p, e
