@@ -30,6 +30,7 @@ type stateFileData struct {
 	PolicyName    string            `json:"policyName"`
 	DefaultCPUSet string            `json:"defaultCpuSet"`
 	Entries       map[string]string `json:"entries,omitempty"`
+	PolicyData    map[string]string `json:"policyData,omitempty"`
 }
 
 var _ State = &stateFile{}
@@ -115,6 +116,7 @@ func (sf *stateFile) tryRestoreState() error {
 
 	sf.cache.SetDefaultCPUSet(tmpDefaultCPUSet)
 	sf.cache.SetCPUAssignments(tmpAssignments)
+	sf.cache.SetPolicyData(readState.PolicyData)
 
 	glog.V(2).Infof("[cpumanager] state file: restored state from state file \"%s\"", sf.stateFilePath)
 	glog.V(2).Infof("[cpumanager] state file: defaultCPUSet: %s", tmpDefaultCPUSet.String())
@@ -131,6 +133,7 @@ func (sf *stateFile) storeState() {
 		PolicyName:    sf.policyName,
 		DefaultCPUSet: sf.cache.GetDefaultCPUSet().String(),
 		Entries:       map[string]string{},
+		PolicyData:    sf.cache.GetPolicyData(),
 	}
 
 	for containerID, cset := range sf.cache.GetCPUAssignments() {
@@ -175,6 +178,18 @@ func (sf *stateFile) GetCPUAssignments() ContainerCPUAssignments {
 	return sf.cache.GetCPUAssignments()
 }
 
+func (sf *stateFile) GetPolicyData() map[string]string {
+	sf.RLock()
+	defer sf.RUnlock()
+	return sf.cache.GetPolicyData()
+}
+
+func (sf *stateFile) GetPolicyEntry(key string) (string, bool) {
+	sf.RLock()
+	defer sf.RUnlock()
+	return sf.cache.GetPolicyEntry(key)
+}
+
 func (sf *stateFile) SetCPUSet(containerID string, cset cpuset.CPUSet) {
 	sf.Lock()
 	defer sf.Unlock()
@@ -193,6 +208,20 @@ func (sf *stateFile) SetCPUAssignments(a ContainerCPUAssignments) {
 	sf.Lock()
 	defer sf.Unlock()
 	sf.cache.SetCPUAssignments(a)
+	sf.storeState()
+}
+
+func (sf *stateFile) SetPolicyData(data map[string]string) {
+	sf.Lock()
+	defer sf.Unlock()
+	sf.cache.SetPolicyData(data)
+	sf.storeState()
+}
+
+func (sf *stateFile) SetPolicyEntry(key, value string) {
+	sf.Lock()
+	defer sf.Unlock()
+	sf.cache.SetPolicyEntry(key, value)
 	sf.storeState()
 }
 
