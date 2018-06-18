@@ -76,6 +76,10 @@ type ContainerManager interface {
 	// and inactive device plugin resources previously registered on the node.
 	GetDevicePluginResourceCapacity() (v1.ResourceList, v1.ResourceList, []string)
 
+	// GetCPUPluginResourceCapacity returns the node capacity of CPU and any potential other related
+	// resources that can get declared by a CPUManager policy plugin.
+	GetCPUPluginResourceCapacity() v1.ResourceList
+
 	// UpdateQOSCgroups performs housekeeping updates to ensure that the top
 	// level QoS containers have their desired state in a thread-safe way
 	UpdateQOSCgroups() error

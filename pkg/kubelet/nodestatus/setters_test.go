@@ -219,6 +219,7 @@ func TestMachineInfo(t *testing.T) {
 		machineInfoError             error
 		capacity                     v1.ResourceList
 		devicePluginResourceCapacity dprc
+		cpuPluginResourceCapacity    v1.ResourceList
 		nodeAllocatableReservation   v1.ResourceList
 		expectNode                   *v1.Node
 		expectEvents                 []testEvent
@@ -439,6 +440,9 @@ func TestMachineInfo(t *testing.T) {
 					"device-plugin": *resource.NewQuantity(1, resource.BinarySI),
 				},
 			},
+			cpuPluginResourceCapacity: v1.ResourceList{
+				v1.ResourceCPU: *resource.NewMilliQuantity(1000, resource.DecimalSI),
+			},
 			expectNode: &v1.Node{
 				Status: v1.NodeStatus{
 					Capacity: v1.ResourceList{
@@ -595,6 +599,9 @@ func TestMachineInfo(t *testing.T) {
 				c := tc.devicePluginResourceCapacity
 				return c.capacity, c.allocatable, c.inactive
 			}
+			cpuPluginResourceCapacityFunc := func() v1.ResourceList {
+				return tc.cpuPluginResourceCapacity
+			}
 			nodeAllocatableReservationFunc := func() v1.ResourceList {
 				return tc.nodeAllocatableReservation
 			}
@@ -609,7 +616,8 @@ func TestMachineInfo(t *testing.T) {
 			}
 			// construct setter
 			setter := MachineInfo(nodeName, tc.maxPods, tc.podsPerCore, machineInfoFunc, capacityFunc,
-				devicePluginResourceCapacityFunc, nodeAllocatableReservationFunc, recordEventFunc)
+				devicePluginResourceCapacityFunc, cpuPluginResourceCapacityFunc, nodeAllocatableReservationFunc,
+				recordEventFunc)
 			// call setter on node
 			if err := setter(tc.node); err != nil {
 				t.Fatalf("unexpected error: %v", err)
