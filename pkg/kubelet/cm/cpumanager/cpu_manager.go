@@ -38,6 +38,9 @@ import (
 // ActivePodsFunc is a function that returns a list of pods to reconcile.
 type ActivePodsFunc func() []*v1.Pod
 
+// UpdateCapacityFunc is a function that updates CPU Manager/Plugin resource capacity.
+type UpdateCapacityFunc func(v1.ResourceList)
+
 type runtimeService interface {
 	UpdateContainerResources(id string, resources *runtimeapi.LinuxContainerResources) error
 }
@@ -64,6 +67,10 @@ type Manager interface {
 
 	// State returns a read-only interface to the internal CPU manager state.
 	State() state.Reader
+
+	// GetCapacity is called by the container manager to retrieve the capacity of
+	// any CPU and related resources.
+	GetCapacity() v1.ResourceList
 }
 
 type manager struct {
@@ -92,6 +99,8 @@ type manager struct {
 	machineInfo *cadvisorapi.MachineInfo
 
 	nodeAllocatableReservation v1.ResourceList
+
+	nodeCapacity v1.ResourceList
 }
 
 var _ Manager = &manager{}
@@ -204,6 +213,10 @@ func (m *manager) RemoveContainer(containerID string) error {
 
 func (m *manager) State() state.Reader {
 	return m.state
+}
+
+func (m *manager) GetCapacity() v1.ResourceList {
+	return m.nodeCapacity
 }
 
 type reconciledContainer struct {

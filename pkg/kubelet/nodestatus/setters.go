@@ -170,6 +170,7 @@ func MachineInfo(nodeName string,
 	machineInfoFunc func() (*cadvisorapiv1.MachineInfo, error), // typically Kubelet.GetCachedMachineInfo
 	capacityFunc func() v1.ResourceList, // typically Kubelet.containerManager.GetCapacity
 	devicePluginResourceCapacityFunc func() (v1.ResourceList, v1.ResourceList, []string), // typically Kubelet.containerManager.GetDevicePluginResourceCapacity
+	cpuPluginResourceCapacityFunc func() v1.ResourceList, // typically Kubelet.containerManager.GetCPUPluginResourceCapacity
 	nodeAllocatableReservationFunc func() v1.ResourceList, // typically Kubelet.containerManager.GetNodeAllocatableReservation
 	recordEventFunc func(eventType, event, message string), // typically Kubelet.recordEvent
 ) Setter {
@@ -250,6 +251,14 @@ func MachineInfo(nodeName string,
 				// node status.
 				node.Status.Capacity[v1.ResourceName(removedResource)] = *resource.NewQuantity(int64(0), resource.DecimalSI)
 			}
+
+			if cpuPluginCapacity := cpuPluginResourceCapacityFunc(); cpuPluginCapacity != nil {
+				for k, v := range cpuPluginCapacity {
+					glog.V(2).Infof("Update capacity for %s to %d", k, v.Value())
+					node.Status.Capacity[k] = v
+				}
+			}
+
 		}
 
 		// Set Allocatable.
