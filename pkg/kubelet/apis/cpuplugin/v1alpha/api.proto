@@ -1,0 +1,213 @@
+// To regenerate api.pb.go run hack/update-generated-cpu-plugin.sh
+syntax = 'proto3';
+
+package v1alpha;
+
+import "github.com/gogo/protobuf/gogoproto/gogo.proto";
+
+option (gogoproto.goproto_stringer_all) = false;
+option (gogoproto.stringer_all) =  true;
+option (gogoproto.goproto_getters_all) = true;
+option (gogoproto.marshaler_all) = true;
+option (gogoproto.sizer_all) = true;
+option (gogoproto.unmarshaler_all) = true;
+option (gogoproto.goproto_unrecognized_all) = false;
+
+// A dummy empty request/response message.
+message Empty {
+}
+
+//
+// K8s types we relay to a CPU plugin.
+//
+// Notes:
+//   These types correspond to K8s types that we expose (relay) to CPU
+//   Manager policy plugins. They are typically either metadata that can
+//   be relevant for decision-making in the plugin, or they are data
+//   types specific to the CPU Manager. These types typically have only
+//   a subset of the data present in the corresponding K8s types.
+//
+
+//
+// Resource quantities, lists, requirements, Pods, Containers, CPU topology.
+///
+
+// We always represent quantities as string on the wire.
+message Quantity {
+        string Value = 1;
+}
+
+// Protobuf does not support typedefs or type aliases.
+// type ResourceList map<string,Quantity>
+
+// Resource requirements (requests and limits).
+message ResourceRequirements {
+        map<string, Quantity>Limits = 1;
+        map<string, Quantity>Requests = 2;
+}
+
+// PodSpec data
+message PodSpec {
+        string SchedulerName = 1;
+        string PriorityClassName = 2;
+        // Should we have Affinity and Tolerations ?
+}
+
+// Pod data
+message Pod {
+        string Name = 1;
+        string Namespace = 2;
+        map<string, string> Labels = 3;
+        PodSpec Spec = 4;
+        // Should we have Annotations as well ?
+}
+
+// Container data
+message Container {
+        string Name = 1;
+        ResourceRequirements Resources = 2;
+}
+
+// CPU topology information about a single CPU.
+message CPUInfo {
+        int32 SocketID = 1;
+        int32 CoreID = 2;
+}
+
+// Protobuf does not support typedefs or type aliases.
+// type CPUDetails map<int32, CPUInfo>
+
+// CPU topology information.
+message CPUTopology {
+        int32 NumCPUs = 1;
+        int32 NumCores = 2;
+        int32 NumSockets = 3;
+        map<int32, CPUInfo> CPUDetails = 4;
+}
+
+
+//
+// CPU Manager/policy-specific data types.
+//
+
+// Permanent state stored on server, or updated in plugin.
+message State {
+        // Non-default container CPU assignments.
+        map<string, string> assignments = 1;
+        // The default CPU set.
+        string defaultCPUSet = 2;
+        // Plugins-specific data.
+        map<string, string> pluginState = 3;
+}
+
+// A container configuration hint.
+message ContainerHint {
+        // Container ID in K8s.
+        string id = 1;
+        // CPUs this container should run on.
+        string cpuset = 2;
+        // Memory nodes this container should run in.
+        string memory = 3;
+        // Container cache confguration.
+        string cache = 4;
+        // Environment variables to set in the container.
+        map<string, string> environment = 5;
+        // *Extra* annotations to put on the container.
+        map<string, string> annotations = 6;
+}
+
+// Registration is the service advertised by the Kubelet/CPU Manager.
+// A CPU policy plugin registers itself using this service. If the
+// registration fails, the CPU policy plugin should terminate. Upon
+// successful registration the CPU Manager will connect to CPU Plugin
+// service on the socket advertised by the plugin in the register request.
+service Registration {
+        rpc Register(RegisterRequest) returns (Empty) {}
+}
+
+message RegisterRequest {
+        // Version of the API the CPU Plugin was built against.
+        string version = 1;
+        // Name of the policy. Also defines the name of the plugins socket.
+        string name = 2;
+        // Vendor/domain. Defines the namespace for extended resource for the plugin.
+        string vendor = 3;
+}
+
+// CpuPlugin is the service advertised by CPU policy plugins.
+// The CPU Manager uses the plugin service to configure the plugin, restore its
+// state, relay container addition and removal requests to the plugin, and take
+// container confguration hints in response. The response can contain arbitrary
+// plugin data as well (as JSON strings) to be stored among the persistent state
+// of the CPU Manager. The plugin data, along with external plugin configuration
+// is fed to the plugin any time the plugin is started or restarted.
+service CpuPlugin {
+        // Configure (and start) the policy plugin.
+        rpc Configure(ConfigureRequest) returns (ConfigureResponse) {}
+        // Allocate resources for the given container.
+        rpc AddContainer(AddContainerRequest) returns (AddContainerResponse) {}
+        // Release resources of the given container.
+        rpc RemoveContainer(RemoveContainerRequest) returns (RemoveContainerResponse) {}
+}
+
+// Data for configuring/starting the plugin.
+message ConfigureRequest {
+        // CPU topology information
+        CPUTopology topology = 1;
+        // Number of system- and kube-reserved CPUs.
+        int32 numReservedCPUs = 2;
+        // Policy configuration.
+        map<string, string> config = 3;
+        // Previous saved state.
+        State state = 4;
+}
+
+// Plugin resources declarations, updated state.
+message ConfigureResponse {
+        // Declared resources.
+        map<string, Quantity> resources = 1;
+        // State updates, if any.
+        State state = 2;
+        // *Extra* node annotations, if any.
+        map<string, string> annotations = 3;
+}
+
+// Pod container allocation request.
+message AddContainerRequest {
+        // ID of container to add.
+        string id = 1;
+        // Pod container belongs to.
+        Pod pod = 2;
+        // Container data.
+        Container container = 3;
+}
+
+// Pod container configuration hints, resource updates, updated state.
+message AddContainerResponse {
+        // Container configuration hints.
+        map<string, ContainerHint> hints = 1;
+        // Updated resource declarations, if any.
+        map<string, Quantity> resources = 2;
+        // State updates, if any.
+        State state = 3;
+}
+
+// Pod container deallocation request.
+message RemoveContainerRequest {
+        // ID of container to remove.
+        string id = 1;
+}
+
+// Pod container configuration hints, resource updates, updated state.
+//   Notes: We could rename AddContainerResponse to something like
+//       ContainerRequestResponse and use that both here and above for
+//       allocation responses.
+//
+message RemoveContainerResponse {
+        // Updated (other) container configuration, if any.
+        map<string, ContainerHint> hints = 1;
+        // Updated resource declarations, if any.
+        map<string, Quantity> resources = 2;
+        // State updates, if any.
+        State state = 3;
+}
