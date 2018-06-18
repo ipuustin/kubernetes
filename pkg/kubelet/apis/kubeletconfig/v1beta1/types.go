@@ -377,6 +377,11 @@ type KubeletConfiguration struct {
 	// Default: "none"
 	// +optional
 	CPUManagerPolicy string `json:"cpuManagerPolicy,omitempty"`
+	// CPU Manager pluggable policy opaque configuration data.
+	// Requires the CPUManager feature gate to be enabled (and the 'plugin' policy to selected).
+	// Default: nil
+	// +optional
+	CPUManagerPolicyConfig map[string]string `json:"cpuManagerPolicyConfig,omitempty"`
 	// CPU Manager reconciliation period.
 	// Requires the CPUManager feature gate to be enabled.
 	// Dynamic Kubelet Config (beta): If dynamically updating this field, consider that
