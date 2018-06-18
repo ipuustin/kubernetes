@@ -19,6 +19,7 @@ package cpumanager
 import (
 	"fmt"
 	"math"
+	"strings"
 	"sync"
 	"time"
 
@@ -106,15 +107,31 @@ type manager struct {
 var _ Manager = &manager{}
 
 // NewManager creates new cpu manager based on provided policy
-func NewManager(cpuPolicyName string, reconcilePeriod time.Duration, machineInfo *cadvisorapi.MachineInfo, nodeAllocatableReservation v1.ResourceList, stateFileDirectory string) (Manager, error) {
+func NewManager(cpuPolicyName string, cpuPolicyConfig map[string]string, reconcilePeriod time.Duration, machineInfo *cadvisorapi.MachineInfo, nodeAllocatableReservation v1.ResourceList, stateFileDirectory string) (Manager, error) {
 	var policy Policy
 
-	switch policyName(cpuPolicyName) {
+	args := strings.Split(cpuPolicyName, ":")
+	name := args[0]
+
+	if !strings.HasPrefix(name, string(PolicyRelay)) && cpuPolicyConfig != nil {
+		glog.Errorf("[cpumanager] CPU policy configuration (%v) specified for non-plugin policy (%s)",
+			cpuPolicyConfig, cpuPolicyName)
+	}
+
+	manager := &manager{
+		reconcilePeriod:            reconcilePeriod,
+		machineInfo:                machineInfo,
+		nodeAllocatableReservation: nodeAllocatableReservation,
+		nodeCapacity:               v1.ResourceList{},
+	}
+
+	switch policyName(name) {
 
 	case PolicyNone:
 		policy = NewNonePolicy()
 
 	case PolicyStatic:
+	case PolicyRelay:
 		topo, err := topology.Discover(machineInfo)
 		if err != nil {
 			return nil, err
@@ -138,7 +155,25 @@ func NewManager(cpuPolicyName string, reconcilePeriod time.Duration, machineInfo
 		// exclusively allocated.
 		reservedCPUsFloat := float64(reservedCPUs.MilliValue()) / 1000
 		numReservedCPUs := int(math.Ceil(reservedCPUsFloat))
-		policy = NewStaticPolicy(topo, numReservedCPUs)
+		if name == string(PolicyStatic) {
+			policy = NewStaticPolicy(topo, numReservedCPUs)
+		} else {
+			var plugin string
+
+			if len(args) > 1 {
+				plugin = args[1]
+			} else {
+				plugin = ""
+			}
+
+			updateCapacityFunc := func(resources v1.ResourceList) {
+				for k, v := range resources {
+					manager.nodeCapacity[k] = v
+				}
+			}
+
+			policy = NewRelayPolicy(topo, numReservedCPUs, plugin, cpuPolicyConfig, updateCapacityFunc)
+		}
 
 	default:
 		glog.Errorf("[cpumanager] Unknown policy \"%s\", falling back to default policy \"%s\"", cpuPolicyName, PolicyNone)
@@ -150,13 +185,9 @@ func NewManager(cpuPolicyName string, reconcilePeriod time.Duration, machineInfo
 		return nil, fmt.Errorf("could not initialize checkpoint manager: %v", err)
 	}
 
-	manager := &manager{
-		policy:                     policy,
-		reconcilePeriod:            reconcilePeriod,
-		state:                      stateImpl,
-		machineInfo:                machineInfo,
-		nodeAllocatableReservation: nodeAllocatableReservation,
-	}
+	manager.policy = policy
+	manager.state = stateImpl
+
 	return manager, nil
 }
 
