@@ -1,0 +1,165 @@
+A list of things to fix, work on, or experiment with.
+
+TODO (for a longer explanation see below):
+
+- CPUManager: atomic or transactional state updates in state_file
+- pool policy: collect statistics about pool utilisation
+- pool policy: expose collected statistics
+- pool-tool: rename to poolctl ;-)
+- pool-tool: make it work with pool policy plugin
+- CPUManager: end-to-end memory (node) and LLC/RDT configuration enforcement
+- pool policy: ballooning pools/floating CPUs/automatic rebalancing
+- CPUManager/policy relay: try asynchronous request/config hint processing
+- pool policy: take CPUs offline/online when reconciling configuration
+- CPUManager/kubelet: pass node annotations to the policy plugin
+- CPUManager/kubelet: pass pod namespace to the policy plugin
+- pool policy: node annotation as highest priority configuration source
+- figure out end-to-end testing details
+- add a set of end-to-end test cases
+- performance measurement/tests
+- document/sketch up 'the workload defines the pool setup' for Tomasz
+- maybe roll a PoC implementation of the above
+
+(More) Detailed Description (WiP):
+
+CPUManager: atomic or transactional state updates in state_file
+
+Pool policy: collect statistics about pool utilisation
+
+Pool policy: expose collected statistics
+
+Pool-tool: make it work with pool policy plugin
+
+CPUManager: end-to-end memory (node) and LLC/RDT configuration enforcement
+
+Pool policy: ballooning pools/floating CPUs/automatic rebalancing
+
+CPUManager/policy relay: try asynchronous request/config hint processing
+
+Pool policy: take CPUs offline/online when reconciling configuration
+
+CPUManager/kubelet: pass node annotations to the policy plugin
+
+CPUManager/Kubelet: pass pod namespace to the policy plugin
+
+Pool policy: node annotation as highest priority configuration source
+
+End-to-end testing
+
+End-to-end test cases
+
+Performance measurement/tests
+
+Workload-defined pools
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Backup
+
+
+
+Pool Policy plugin:
+
+- Collect Pool Statistics/Utilisation Data
+
+We don't really collect pool statistics/utilisiation information as
+we don't have a way to publish them at the moment. 
+
+- Pool-Tool for the Pool Plugin
+
+Make pool-tool (maybe rename it to poolctl ?) work with the pool
+policy plugin.
+
+
+
+  - make pool-tool work again (wouldn't poolctl be a more kube-ish name?)
+
+    Rework the profile-handling/switching code in pool-tool to work
+    with the external pool policy plugin. Add the necessary missing bits
+    to the plugin, which is mostly collecting and publishing stats / 
+    utilisation, I guess. Use a CRD for that, or check what the community
+    is cooking up (it was discussed in late May or early June in the
+    resource-mgmt SIG meeting) and see if that could be used.
+
+    As for the actual collection part, some suitable weighing scheme for
+    measuring utilisation should be picked (maybe an exponentially weighted
+    moving average with an adjustable alpha preset to a reasonable default).
+    The stats/utilisation data collection and recalculation can be always
+    triggered by container add/remove but it should also be triggered by a
+    resonably short/long timer, so that the 
+
+
+CPU Manager - Policy API
+
+
+CPU Manager - Kubelet Core API
+
+
+CPU Manager Internals
+
+  - support for atomic state updates for multiple containers:
+
+    In the original CPU Manager policies (static) a single container
+    add/remove request results in state changes for only a single
+    container, the one being added or removed. This is not true in
+    general for arbitrary policies, and it is not true in particular
+    for the current pool policy.
+
+    When an exclusive set of CPUs are allocated to or released from
+    a container within a pool, all the other containers running on
+    the shared subset of CPUs of the pool are affected. All of these
+    should be updated and ideally atomically. At the protocol level
+    this is reflected by multiple HW hints being relayed back to the
+    plugin relay policy in a single message.
+
+    However, at the CPU Manager side currently there is not way to
+    update multiple containers atomically so the policy relay will
+    update the state of the containers one by one. The state backend
+    (state_file) will save the full state after every update, potentially
+    leaving an inconsistent state if the kubelet crashes (or is stopped)
+    before all the states are updated.
+
+    This could be fixed by either adding support to the State interface for
+
+      - updating the state of several containers with a single function call
+        (and state saving), or
+      - adding transactional state updates by introducing a pair of
+        tx-start/tx-commit functions, and checking in the state-saving
+        function that no transactions are active, and adding a state-saving
+        call to tx-commit
+
+  - end-to-end (CPUManager->CRI) support for cpuset.mems and Intel RDT/LLC:
+
+    The pluggable policy changes have introduced container hints for
+    memory node (NUMA) preference and Intel RDT. However, there are places
+    along the policy plugin -> policy relay -> state -> CPU Manager -> CRI
+    path where only the original cpuset is passed on (the immediate one
+    being the reconcilation code in cpu_manager.go). All remaining gaps
+    along the end-to-end path should be plugged.
+
+
+
+Legend:
+
+-: TODO
+*: being worked on, partially implemented
++: implemented
+
