@@ -1,0 +1,405 @@
+Getting Pluggable CPU Policies Up And Running
+
+0. Overview
+
+This is a short document describing the steps to get Kubernetes
+with pluggable CPU policies and a sample pool plugin up and running.
+
+Necessary Steps/Checklist
+
+- get recent go compiler up and running
+- get recent docker up and running
+- create local docker registry
+- get kubernetes v1.10.5 up and running
+- clone and compile kubelet with pluggable CPU policy support
+- clone and create CpuPool mutable admission webhook docker image
+- publish webhook image to local registry
+- start modified kubelet
+- start the pool CPU policy plugin
+- deploy webhook
+
+1. Get a recent go compiler up and running
+
+Your distro probably already has a recent enough go compiler (1.9.x,
+or 1.10.x). If not, install the latest version by following the instructions
+at https://golang.org/doc/install/source#install.
+
+2. Get a recent version of docker up and running
+
+You will need a fairly recent version of docker (17.05 or higher), with
+support for multi-stage builds to build the CpuPool mutating admission
+webhook docker image. Refer to the Docker CE documentation for more details
+at https://docs.docker.com/install
+
+3. Create a Local Docker Registry
+
+You will need a local docker registry to publish and pull in the webhook
+image. The easiest is to declare this registry insecure on all hosts
+that will access it (all your cluster nodes is a safe bet). You can create
+and start the registry with these commands:
+
+docker create --name registry -p 5000:5000 registry:2
+docker start registry
+
+You can declare the registry insecure by running
+
+cat > /etc/docker/daemon.json <<EOF
+{
+    "insecure-registries": ["<IP-ADDRESS>:5000"]
+}
+
+where <IP-ADDRESS> is the IP address of your registry host.
+Make sure to restart docker after this change.
+
+4. Get a Kubernetes v1.10.5 cluster up and running
+
+Get a v1.10.5 kubernetes cluster up and running. How to do this depends
+on your distro. For detailed instructions refer to the Kubernetes documentation
+at https://kubernetes.io/docs/tasks/tools/install-kubeadm. The short story is
+that you get kubeadm installed for your distro, then run
+
+kubeadm init --kubernetes-version v1.10.5
+cp /etc/kubernetes/admin.conf $HOME/.kube/config
+# If you go with weavenet...
+kubectl apply -f "https://cloud.weave.works/k8s/net?k8s-version=$(kubectl version | base64 | tr -d '\n')"
+
+5. Clone and compile Kubernetes/kubelet with pluggable CPU policy additions
+
+You need to clone, compile and run a patched version of kubelet with the
+necessary CPU Manager pluggable policy additions. You will also need an
+external CPU policy plugin to run. You can do both of these by running
+
+git clone https://github.com/klihub/kubernetes
+cd kubernetes
+git branch --track devel/cpumanager/pluggable-policies origin/devel/cpumanager/pluggable-policies
+git checkout devel/cpumanager/pluggable-policies
+make KUBE_VERBOSE=1 KUBE_RELEASE_RUN_TESTS=n KUBE_FASTBUILD=true WHAT=cmd/kubelet
+make KUBE_VERBOSE=1 KUBE_RELEASE_RUN_TESTS=n KUBE_FASTBUILD=true WHAT=cmd/cpu-policy-plugins/cpu-policy-pool
+cd ..
+
+This will leave kubelet and cpu-policy-pool in _output/local/bin/linux/amd64.
+
+6. Clone and compile the Kubernetes CpuPool mutable admission webhook
+
+The pool CPU policy plugin needs a mutating admission controller. The CpuPool
+webhook is an external webhook implementation of it. You need to compile and
+generate a docker image for deploying the webhook in your cluster. You can
+do it by running these commands:
+
+mkdir -p $GOPATH/src/github.com/intel
+cd $GOPATH/src/github.com/intel
+git clone https://github.com/ipuustin/intel-device-plugins-for-kubernetes.git
+cd intel-device-plugins-for-kubernetes
+git branch --track origin/cpu-pool cpu-pool
+git checkout cpu-pool
+export SRC=$GOPATH/src/github.com/intel/intel-device-plugins-for-kubernetes
+cd $SRC
+make intel-cpu-pool-admissionwebhook
+
+If everything goes fine, this will leave a docker image on your host,
+tagged as intel-cpu-pool-admissionwebhook:devel.
+
+7. Publish Webhook Image to Local Registry
+
+You need to publish the generated webhook docker image to your registry
+where your cluster nodes can pull the image from. You can do this by
+running
+
+docker tag intel-cpu-pool-admissionwebhook:devel <IP-ADDRESS>:5000/intel-cpu-pool-admissionwebhook:devel
+docker push <IP-ADDRESS>:5000/intel-cpu-pool-admissionwebhook:devel
+
+where <IP-ADDRESS> is the IP address of your local registry host.
+
+8. Start Modified Kubelet with CPU Manager Pluggable Policy Support
+
+You can modify your system services to start the modified kubelet binary
+with additional command-line options. However for testing, it is usually
+better to start first by stopping kubelet and running the modified binary
+by hand to verify that it starts up successfully.
+
+You can do this by running
+
+systemctl stop kubelet.service
+_output/local/bin/linux/amd64/kubelet --bootstrap-kubeconfig=/etc/kubernetes/bootstrap-kubelet.conf --kubeconfig=/etc/kubernetes/kubelet.conf --pod-manifest-path=/etc/kubernetes/manifests --allow-privileged=true --network-plugin=cni --cni-conf-dir=/etc/cni/net.d --cni-bin-dir=/opt/cni/bin --cluster-dns=10.96.0.10 --cluster-domain=cluster.local --authorization-mode=Webhook --client-ca-file=/etc/kubernetes/pki/ca.crt --cadvisor-port=0 --cgroup-driver=systemd --rotate-certificates=true --cert-dir=/var/lib/kubelet/pki --feature-gates=CPUManager=true --kube-reserved=cpu=800m --cpu-manager-reconcile-period=60s --cpu-manager-policy=plugin:pool --cpu-manager-policy-config=reserved=0,default=1,2,avx512=3
+
+The first part of the command line up till the --feature-gates option is
+the original kubelet command line which you can check and copy for your
+cluster from the running process list (ps axuw) before stopping kubelet.
+
+The rest of the command line options
+
+- enable the feature gate for CPU Manager
+- reserve 800 milli-CPUs for kubernetes system pods
+- set the CPU Manager reconcilation period to 1 minute
+- select the external pool policy plugin,
+- and supply the plugin the desired sample configuration:
+  o (system- and kube-)reserved CPU is #0
+  o default pool has 2 CPU, #1 and #2
+  o avx512 pool has 1 CPU, #3
+
+You should adjust the configuration according to your hardware/setup.
+Basically a number denotes an exact CPU, while a number prefixed with @
+denotes the number of CPUs the policy can freely choose from the unused ones.
+For example
+
+  reserved=0,default=@2,avx512=@1
+
+is a similar setup to the above but the exact CPUs for the default and
+avx512 pools are chosen by the policy plugin.
+
+Note than any unused/unassigned CPUs are automatically added to the
+default pool.
+
+9. Start the 'pool' CPU Policy Plugin
+
+Normally you'd run your policy plugin as a daemonset, deployment, or
+something similar. For testing we start the plugin manually. You can do this
+by running
+
+_output/local/bin/linux/amd64/cpu-policy-pool -logtostderr
+
+You should see the plugin sucessfully establishin connection to the
+kubelet, receiving configuration, and eventually container addition and
+removal requests.
+
+10. Deploy CpuPool Webhook
+
+You need to run the CpuPool Webhook which augments pod creation requests
+with the necessary CPU pool information. You can create the webhook
+deployment with the supplied script from the source tree. Before doing so,
+however you need to update the deploymnet YAML file to point to your
+local registry. You can do this by running
+
+sed -i -e 's#intel-cpu-pool-admissionwebhook:devel#<IP-ADDRESS>:5000/intel-cpu-pool-admissionwebhook:devel#g' deployments/cpu_pool_admissionwebhook/deployment.yaml
+
+Once you checked and verified that the update deployment is correct, you
+can create the webhook by running
+
+./scripts/cpu-pool-webhook-deploy.sh
+
+If this was successful, you should see eventually a corresponding webhook pod
+in the Running state in the output of 'kubectl get pods'.
+
+11. Create Some Test Pods
+
+Create some test pods with some pool allocations and see if things work
+correctly.
+
+cat > vis-1.yaml <<EOF
+apiVersion: v1
+kind: Pod
+metadata:
+  name: vis-1
+spec:
+  containers:
+  - image: quay.io/connordoyle/cpuset-visualizer
+    name: vis-1
+    resources:
+      requests:
+        intel.com/cpupool.avx512: 1000
+      limits:
+        intel.com/cpupool.avx512: 1000
+EOF
+
+kubectl create -f vis-1.yaml
+
+cat ./get-pod-ips
+# Requires `jq`. See https://stedolan.github.io/jq/download
+
+set -o nounset -o pipefail -o errexit
+
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+KUBECTL="kubectl"
+
+$KUBECTL get pods -o json | \
+  jq -r '.items[] | "\(.metadata.name) http://\(.status.podIP)"'
+
+./get-pod-ips
+intel-cpu-pool-webhook-deployment-847789cc8b-tjcs5 http://10.32.0.2
+vis-1 http://10.32.0.3
+
+firefox http://10.32.0.3
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+of pod creation request
+
+Quick Instructions For Testing Pluggable Policies/CPU Pool Policy
+
+0. Overview
+
+Getting everything up and running involves the following steps:
+
+1. get recent go compiler up and running
+2. get a recent docker up and running
+3. get a kubernetes v1.10.5 cluster up and running
+4. clone and compile kubernetes with pluggable policy additions, CpuPool policy
+5. clone and compile kubernetes CpuPool mutable admission webhook
+6. start (deploy) CpuPool mutating admission webhook
+7. start modified kubelet with pluggable policy additions
+8. start CpuPool policy plugin
+9. create a few test pods to see if everything works
+
+1. Get a recent go compiler up and running
+
+Your distro probably already has a enough go compiler (1.9.x, or 1.10.x).
+If not, install the latest version by following the instructions at
+https://golang.org/doc/install/source#install.
+
+2. Get a recent version of docker up and running
+
+You will need a fairly recent version (17.05 or higher, preferably 18.x)
+of docker with support for multi-stage builds to build the CpuPool mutating
+admission webhook. How to get such a version up and runing depends on your
+distro. Refer to the Docker CE documentation for more details at
+https://docs.docker.com/install/
+
+3. Get a Kubernetes v1.10.5 cluster up and running
+
+Get a v1.10.5 kubernetes cluster up and running. How to do this depends
+on your distro. For more info refer to the Kubernetes documentation at
+https://kubernetes.io/docs/tasks/tools/install-kubeadm/
+
+Basically once you have the right kubeadm installed, the short version of it
+is that you do a
+
+```
+kubeadm init --kubernetes-version=v1.10.5
+cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+kubectl apply -f "https://cloud.weave.works/k8s/net?k8s-version=$(kubectl version | base64 | tr -d '\n')"
+```
+
+4. Clone and compile the Kubernetes with pluggable policy additions
+
+```
+git clone https://github.com/klihub/kubernetes
+cd kubernetes
+git branch --track devel/cpumanager/pluggable-policies origin/devel/cpumanager/pluggable-policies
+git checkout devel/cpumanager/pluggable-policies
+make KUBE_VERBOSE=1 KUBE_RELEASE_RUN_TESTS=n KUBE_FASTBUILD=true WHAT=cmd/kubelet
+make KUBE_VERBOSE=1 KUBE_RELEASE_RUN_TESTS=n KUBE_FASTBUILD=true WHAT=cmd/cpu-policy-plugins/cpu-policy-pool
+cd ..
+```
+
+5. Clone and compile the Kubernetes CpuPool mutable admission webhook
+
+```
+mkdir -p $GOPATH/src/github.com/intel
+cd $GOPATH/src/github.com/intel
+git clone https://github.com/ipuustin/intel-device-plugins-for-kubernetes.git
+cd intel-device-plugins-for-kubernetes
+git branch --track origin/cpu-pool cpu-pool
+git checkout cpu-pool
+export SRC=$GOPATH/src/github.com/intel/intel-device-plugins-for-kubernetes
+cd $SRC
+make intel-cpu-pool-admissionwebhook
+```
+
+6. Start/Deploy the CpuPool mutating admission webhook.
+
+If your the master node of your cluster is not the one you compiled the
+CpuPool webhook, you need to create a local docker registry, and push
+the webhook image there. If you don't have a private docker registry,
+the easiest is to set up a local private insecure one.
+
+First, create the registry on a machine of your choice.
+
+```
+docker run -d -p 5000:5000 --restart=always --name=registry registry:2
+```
+
+On the machine you compiled and built the webhook image and on all your
+cluster nodes, declare the new registry as insecure and restart the docker
+daemon.
+
+```
+cat > /etc/docker/daemon.json <<EOF
+{
+    "insecure-registries": ["<ip-address-of-registry-machine>:5000"]
+}
+EOF
+systemctl restart docker.service
+```
+
+Next push the webhook docker image you built to your local registry:
+
+```
+docker tag intel-cpu-pool-admissionwebhook:devel <ip-of-your-registry-machine>:5000/intel-cpu-pool-admissionwebhook:devel
+docker push <ip-of-your-registry-machine>:5000/intel-cpu-pool-admissionwebhook:devel
+```
+
+Now, on your cluster nodes pull in the webhook docker image and re-tag it.
+Alternatively, you can omit this step, if you change the mutating admission
+webhooks deployment YAML file in
+deployments/cpu_pool_admissionwebhook/deployment.yaml to point to the image
+in your local registry.
+
+```
+docker pull <ip-of-your-registry-machine>:5000/intel-cpu-pool-admissionwebhook:devel
+docker tag <ip-of-your-registry-machine>:5000/intel-cpu-pool-admissionwebhook:devel intel-cpu-pool-admissionwebhook:devel
+```
+
+Now you're ready to deploy the admission webhook. The scripts needs CFSSL so you
+should install that too. If the script gives you errors about any other missing
+packages, install those, too.
+
+```
+go get -u github.com/cloudflare/cfssl/cmd/cfssl
+./scripts/cpu-pool-webhook-deploy.sh
+```
+
+Resolve any errors and retry until this succeeds. Eventually you should
+see the corresponding deployment and pod showing up with kubectl.
+
+```
+[root@master xfer]# kubectl get deployments
+NAME                                DESIRED   CURRENT   UP-TO-DATE   AVAILABLE   AGE
+intel-cpu-pool-webhook-deployment   1         1         1            1           15m
+[root@master xfer]# kubectl get pods
+NAME                                                 READY     STATUS    RESTARTS   AGE
+intel-cpu-pool-webhook-deployment-668d489cc5-5bckm   1/1       Running   0          16m
+```
