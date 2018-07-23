@@ -153,6 +153,23 @@ func (sc *stateCheckpoint) GetCPUAssignments() ContainerCPUAssignments {
 	return sc.cache.GetCPUAssignments()
 }
 
+// GetPolicyData returns the policy-specific configuration data.
+func (sc *stateCheckpoint) GetPolicyData() map[string]string {
+	sc.mux.RLock()
+	defer sc.mux.RUnlock()
+
+	return sc.cache.GetPolicyData()
+}
+
+// GetPolicyEntry returns the value associated with a key in the
+// policy-specific configuration data.
+func (sc *stateCheckpoint) GetPolicyEntry(key string) (string, bool) {
+	sc.mux.RLock()
+	defer sc.mux.RUnlock()
+
+	return sc.cache.GetPolicyEntry(key)
+}
+
 // SetCPUSet sets CPU set
 func (sc *stateCheckpoint) SetCPUSet(containerID string, cset cpuset.CPUSet) {
 	sc.mux.Lock()
@@ -174,6 +191,23 @@ func (sc *stateCheckpoint) SetCPUAssignments(a ContainerCPUAssignments) {
 	sc.mux.Lock()
 	defer sc.mux.Unlock()
 	sc.cache.SetCPUAssignments(a)
+	sc.storeState()
+}
+
+// SetPolicyData sets the policy-specific pass-through data.
+func (sc *stateCheckpoint) SetPolicyData(data map[string]string) {
+	sc.mux.Lock()
+	defer sc.mux.Unlock()
+	sc.cache.SetPolicyData(data)
+	sc.storeState()
+}
+
+// SetPolicyEntry sets a keypair in the the policy-specific pass-through
+// data.
+func (sc *stateCheckpoint) SetPolicyEntry(key, value string) {
+	sc.mux.Lock()
+	defer sc.mux.Unlock()
+	sc.cache.SetPolicyEntry(key, value)
 	sc.storeState()
 }
 
