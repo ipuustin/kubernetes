@@ -20,12 +20,11 @@ import (
 	"flag"
 
 	"k8s.io/api/core/v1"
-	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
-	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager"
-	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/topology"
-//	api "k8s.io/kubernetes/pkg/kubelet/apis/cpuplugin/v1alpha"
-	stub "k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/stub"
 	"k8s.io/kubernetes/cmd/cpu-policy-plugins/cpu-policy-pool/pool"
+	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager"
+	stub "k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/stub"
+	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/topology"
+	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 )
 
 const (
@@ -59,13 +58,13 @@ func (p *poolPolicy) Name() string {
 }
 
 func (p *poolPolicy) Start(s stub.State, topology *topology.CPUTopology, numReservedCPUs int) error {
-	p.topology        = topology
+	p.topology = topology
 	p.numReservedCPUs = numReservedCPUs
 
 	if err := p.restoreState(s); err != nil {
 		return err
 	}
-	
+
 	return nil
 }
 
@@ -106,11 +105,12 @@ func (p *poolPolicy) updateState(s stub.State) error {
 		return nil
 	}
 
-	if poolState, err := p.pools.MarshalJSON(); err != nil {
+	poolState, err := p.pools.MarshalJSON()
+	if err != nil {
 		return err
-	} else {
-		s.SetPolicyEntry("pools", string(poolState))
 	}
+
+	s.SetPolicyEntry("pools", string(poolState))
 
 	assignments := p.pools.GetPoolAssignments(false)
 	for id, cset := range assignments {
