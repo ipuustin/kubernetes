@@ -196,6 +196,7 @@ func takeByTopology(topo *topology.CPUTopology, availableCPUs cpuset.CPUSet, num
 	return cpuset.NewCPUSet(), fmt.Errorf("failed to allocate cpus")
 }
 
+// TakeByTopology returns suitable CPUs by trying to fit the request as well as possible.
 func TakeByTopology(topo *topology.CPUTopology, availableCPUs cpuset.CPUSet, numCPUs int) (cpuset.CPUSet, error) {
 	return takeByTopology(topo, availableCPUs, numCPUs)
 }

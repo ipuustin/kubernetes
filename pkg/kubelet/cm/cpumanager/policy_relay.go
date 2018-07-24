@@ -17,14 +17,14 @@ limitations under the License.
 package cpumanager
 
 import (
-	"fmt"
-	"strings"
 	"context"
-	"time"
+	"fmt"
 	"net"
-	"sync"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
+	"time"
 
 	"github.com/golang/glog"
 	"google.golang.org/grpc"
@@ -39,42 +39,45 @@ import (
 )
 
 const (
-	logPrefix               = "[cpumanager/plugin] "    // log message prefix
-	PolicyRelay  policyName = "plugin"                  // our policy name
-	relayTimeout            = 1 * time.Second           // request-response timeout
+	// log message prefix
+	logPrefix = "[cpumanager/plugin] "
+	// PolicyRelay is the name of the relay policy
+	PolicyRelay policyName = "plugin"
+	// request-response timeout
+	relayTimeout = 1 * time.Second
 )
 
 var _ Policy = &pluginRelay{}
 var _ api.RegistrationServer = &pluginRelay{}
 
 // Allow resource declarations without a namespace for these resources.
-var whitelistedResources map[string]bool = map[string]bool {
+var whitelistedResources = map[string]bool{
 	string(v1.ResourceCPU): true,
 }
 
 type pluginRelay struct {
-	sync.Mutex                             // we're lockable
-	topology        *topology.CPUTopology  // discovered CPU topology
-	numReservedCPUs int                    // reserved number of CPUs
-	policyConfig    map[string]string      // opaque policy configuration
-	expectedPolicy  string                 // expected policy
-	updateCapacity  UpdateCapacityFunc     // function to update resource capacity
-	socketDir       string                 // directory for server and plugin sockets
-	serverAddr      string                 // registration server socket path
-	srv             *grpc.Server           // registration gRPC server
-	activePolicy    string                 // active policy, if any
-	vendor          string                 // policy plugin vendor (domain)
-	vendorNamespace string                 // vendor resource namespace
-	clt             *grpc.ClientConn       // CPU plugin gRPC connection
-	plugin          api.CpuPluginClient    // CPU plugin client stub
-	state           state.State            // cached state for configure et al.
+	sync.Mutex                            // we're lockable
+	topology        *topology.CPUTopology // discovered CPU topology
+	numReservedCPUs int                   // reserved number of CPUs
+	policyConfig    map[string]string     // opaque policy configuration
+	expectedPolicy  string                // expected policy
+	updateCapacity  UpdateCapacityFunc    // function to update resource capacity
+	socketDir       string                // directory for server and plugin sockets
+	serverAddr      string                // registration server socket path
+	srv             *grpc.Server          // registration gRPC server
+	activePolicy    string                // active policy, if any
+	vendor          string                // policy plugin vendor (domain)
+	vendorNamespace string                // vendor resource namespace
+	clt             *grpc.ClientConn      // CPU plugin gRPC connection
+	plugin          api.CpuPluginClient   // CPU plugin client stub
+	state           state.State           // cached state for configure et al.
 }
 
 //
 // CPU Manager policy interface.
 //
 
-// Create a new policy for relaying to external CPU policy plugins.
+// NewRelayPolicy creates a new policy for relaying to external CPU policy plugins.
 func NewRelayPolicy(topology *topology.CPUTopology, numReservedCPUs int,
 	plugin string, config map[string]string, updateCapacityFunc UpdateCapacityFunc) Policy {
 	logInfo("creating external policy relay")
@@ -110,7 +113,7 @@ func (r *pluginRelay) Start(s state.State) {
 func (r *pluginRelay) AddContainer(s state.State, pod *v1.Pod, container *v1.Container, containerID string) error {
 	logInfo("AddContainer request...")
 
-	if !r.hasCpuPlugin() {
+	if !r.hasCPUPlugin() {
 		return nil
 	}
 
@@ -121,7 +124,7 @@ func (r *pluginRelay) AddContainer(s state.State, pod *v1.Pod, container *v1.Con
 func (r *pluginRelay) RemoveContainer(s state.State, containerID string) error {
 	logInfo("RemoveContainer request...")
 
-	if !r.hasCpuPlugin() {
+	if !r.hasCPUPlugin() {
 		return nil
 	}
 
@@ -155,7 +158,7 @@ func (r *pluginRelay) Register(ctx context.Context, req *api.RegisterRequest) (*
 		return &api.Empty{}, fmt.Errorf("CPU plugin already active")
 	}
 
-	if err := r.startCpuPluginClient(req.Name, req.Vendor); err != nil {
+	if err := r.startCPUPluginClient(req.Name, req.Vendor); err != nil {
 		return &api.Empty{}, err
 	}
 
@@ -181,7 +184,7 @@ func (r *pluginRelay) startRegistrationServer() {
 	r.srv = grpc.NewServer([]grpc.ServerOption{}...)
 
 	api.RegisterRegistrationServer(r.srv, r)
-	go func () {
+	go func() {
 		r.srv.Serve(sock)
 	}()
 }
@@ -236,10 +239,10 @@ func (r *pluginRelay) stubState() *api.State {
 }
 
 // Set up connection to the registered CPU plugin.
-func (r *pluginRelay) startCpuPluginClient(policy string, vendor string) error {
+func (r *pluginRelay) startCPUPluginClient(policy string, vendor string) error {
 	sockAddr := filepath.Join(api.CpuPluginPath, policy) + ".sock"
 	conn, err := grpc.Dial(sockAddr, grpc.WithInsecure(), grpc.WithBlock(),
-		grpc.WithDialer(func (addr string, timeout time.Duration) (net.Conn, error) {
+		grpc.WithDialer(func(addr string, timeout time.Duration) (net.Conn, error) {
 			return net.DialTimeout("unix", addr, timeout)
 		}),
 	)
@@ -260,7 +263,7 @@ func (r *pluginRelay) startCpuPluginClient(policy string, vendor string) error {
 }
 
 // Tear down the connection to the registered CPU plugin.
-func (r *pluginRelay) stopCpuPluginClient() {
+func (r *pluginRelay) stopCPUPluginClient() {
 	r.Lock()
 	defer r.Unlock()
 
@@ -271,7 +274,7 @@ func (r *pluginRelay) stopCpuPluginClient() {
 	}
 }
 
-func (r *pluginRelay) hasCpuPlugin() bool {
+func (r *pluginRelay) hasCPUPlugin() bool {
 	r.Lock()
 	defer r.Unlock()
 	return r.clt != nil
@@ -283,10 +286,10 @@ func (r *pluginRelay) configure() error {
 	defer cancel()
 
 	rpl, err := r.plugin.Configure(ctx, &api.ConfigureRequest{
-		Topology: stub.StubCPUTopology(*r.topology),
+		Topology:        stub.StubCPUTopology(*r.topology),
 		NumReservedCPUs: int32(r.numReservedCPUs),
-		Config: r.policyConfig,
-		State: r.stubState(),
+		Config:          r.policyConfig,
+		State:           r.stubState(),
 	})
 
 	logInfo("got Configure response %v", *rpl)
@@ -296,7 +299,7 @@ func (r *pluginRelay) configure() error {
 	if err := r.updatePluginResources(rpl.Resources); err != nil {
 		return err
 	}
-	
+
 	return err
 }
 
@@ -306,8 +309,8 @@ func (r *pluginRelay) addContainer(s state.State, pod *v1.Pod, container *v1.Con
 	defer cancel()
 
 	rpl, err := r.plugin.AddContainer(ctx, &api.AddContainerRequest{
-		Id: containerID,
-		Pod: stub.StubPod(*pod),
+		Id:        containerID,
+		Pod:       stub.StubPod(*pod),
 		Container: stub.StubContainer(*container),
 	})
 
@@ -316,7 +319,7 @@ func (r *pluginRelay) addContainer(s state.State, pod *v1.Pod, container *v1.Con
 	}
 
 	logInfo("got AddContainer response %v", *rpl)
-	
+
 	if err := r.applyContainerHints(s, rpl.Hints); err != nil {
 		return err
 	}
