@@ -51,14 +51,14 @@ cat > /etc/docker/daemon.json <<EOF
 where <IP-ADDRESS> is the IP address of your registry host.
 Make sure to restart docker after this change.
 
-4. Get a Kubernetes v1.10.5 cluster up and running
+4. Get a Kubernetes v1.11.1 cluster up and running
 
-Get a v1.10.5 kubernetes cluster up and running. How to do this depends
+Get a v1.11.1 kubernetes cluster up and running. How to do this depends
 on your distro. For detailed instructions refer to the Kubernetes documentation
 at https://kubernetes.io/docs/tasks/tools/install-kubeadm. The short story is
 that you get kubeadm installed for your distro, then run
 
-kubeadm init --kubernetes-version v1.10.5
+kubeadm init --kubernetes-version v1.11.1
 cp /etc/kubernetes/admin.conf $HOME/.kube/config
 # If you go with weavenet...
 kubectl apply -f "https://cloud.weave.works/k8s/net?k8s-version=$(kubectl version | base64 | tr -d '\n')"
