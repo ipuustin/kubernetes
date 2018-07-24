@@ -23,8 +23,10 @@ import (
 	"testing"
 	"time"
 
-	cadvisorapi "github.com/google/cadvisor/info/v1"
 	"io/ioutil"
+	"os"
+
+	cadvisorapi "github.com/google/cadvisor/info/v1"
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -32,12 +34,12 @@ import (
 	runtimeapi "k8s.io/kubernetes/pkg/kubelet/apis/cri/runtime/v1alpha2"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/state"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
-	"os"
 )
 
 type mockState struct {
 	assignments   state.ContainerCPUAssignments
 	defaultCPUSet cpuset.CPUSet
+	policyData    map[string]string
 }
 
 func (s *mockState) GetCPUSet(containerID string) (cpuset.CPUSet, bool) {
@@ -64,6 +66,14 @@ func (s *mockState) SetDefaultCPUSet(cset cpuset.CPUSet) {
 	s.defaultCPUSet = cset
 }
 
+func (s *mockState) SetPolicyData(data map[string]string) {
+	s.policyData = data
+}
+
+func (s *mockState) SetPolicyEntry(key, value string) {
+	s.policyData[key] = value
+}
+
 func (s *mockState) Delete(containerID string) {
 	delete(s.assignments, containerID)
 }
@@ -79,6 +89,15 @@ func (s *mockState) SetCPUAssignments(a state.ContainerCPUAssignments) {
 
 func (s *mockState) GetCPUAssignments() state.ContainerCPUAssignments {
 	return s.assignments.Clone()
+}
+
+func (s *mockState) GetPolicyData() map[string]string {
+	return s.policyData
+}
+
+func (s *mockState) GetPolicyEntry(key string) (string, bool) {
+	value, ok := s.policyData[key]
+	return value, ok
 }
 
 type mockPolicy struct {
@@ -277,7 +296,7 @@ func TestCPUManagerGenerate(t *testing.T) {
 			}
 			defer os.RemoveAll(sDir)
 
-			mgr, err := NewManager(testCase.cpuPolicyName, 5*time.Second, machineInfo, testCase.nodeAllocatableReservation, sDir)
+			mgr, err := NewManager(testCase.cpuPolicyName, make(map[string]string), 5*time.Second, machineInfo, testCase.nodeAllocatableReservation, sDir)
 			if testCase.expectedError != nil {
 				if !strings.Contains(err.Error(), testCase.expectedError.Error()) {
 					t.Errorf("Unexpected error message. Have: %s wants %s", err.Error(), testCase.expectedError.Error())
