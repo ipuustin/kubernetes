@@ -126,6 +126,7 @@ func NewManager(cpuPolicyName string, reconcilePeriod time.Duration, machineInfo
 		policy = NewNonePolicy()
 
 	case PolicyStatic:
+		fallthrough
 	case PolicyRelay:
 		topo, err := topology.Discover(machineInfo)
 		if err != nil {
