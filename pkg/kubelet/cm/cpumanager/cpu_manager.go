@@ -131,6 +131,7 @@ func NewManager(cpuPolicyName string, cpuPolicyConfig map[string]string, reconci
 		policy = NewNonePolicy()
 
 	case PolicyStatic:
+		fallthrough
 	case PolicyRelay:
 		topo, err := topology.Discover(machineInfo)
 		if err != nil {
