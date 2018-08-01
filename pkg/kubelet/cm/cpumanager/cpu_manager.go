@@ -247,6 +247,10 @@ func (m *manager) reconcileState() (success []reconciledContainer, failure []rec
 						failure = append(failure, reconciledContainer{pod.Name, container.Name, containerID})
 						continue
 					}
+					// AddContainer() already updates the container CPU set, so we must continue
+					// to the next container to avoid updating the CPU set twice
+					success = append(success, reconciledContainer{pod.Name, container.Name, containerID})
+					continue
 				} else {
 					// if DeletionTimestamp is set, pod has already been removed from state
 					// skip the pod/container since it's not running and will be deleted soon
