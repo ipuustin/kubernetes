@@ -245,6 +245,7 @@ func (m *manager) reconcileState() (success []reconciledContainer, failure []rec
 					if err != nil {
 						glog.Errorf("[cpumanager] reconcileState: failed to add container (pod: %s, container: %s, container id: %s, error: %v)", pod.Name, container.Name, containerID, err)
 						failure = append(failure, reconciledContainer{pod.Name, container.Name, containerID})
+						continue
 					}
 				} else {
 					// if DeletionTimestamp is set, pod has already been removed from state
