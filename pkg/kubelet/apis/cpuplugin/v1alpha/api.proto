@@ -156,10 +156,8 @@ message ConfigureRequest {
         CPUTopology topology = 1;
         // Number of system- and kube-reserved CPUs.
         int32 numReservedCPUs = 2;
-        // Policy configuration.
-        map<string, string> config = 3;
         // Previous saved state.
-        State state = 4;
+        State state = 3;
 }
 
 // Plugin resources declarations, updated state.

@@ -30,6 +30,7 @@ import (
 const (
 	PolicyName = "pool"
 	logPrefix  = "[" + PolicyName + " CPU policy] "
+	configDir  = "/etc/cpu-pool-plugin-config"
 )
 
 type poolPolicy struct {
@@ -38,17 +39,20 @@ type poolPolicy struct {
 	cfg             map[string]string
 	poolCfg         pool.NodeConfig
 	pools           *pool.PoolSet
+	configPath      string
 }
 
 // Ensure that poolPolicy implements the CpuPolicy interface.
 var _ stub.CpuPolicy = &poolPolicy{}
 
-func NewPoolPolicy() stub.CpuPlugin {
+func NewPoolPolicy(configPath string) stub.CpuPlugin {
 	policy := poolPolicy{}
 	plugin, err := stub.NewCpuPlugin(&policy, "intel.com")
 	if err != nil {
 		logPanic("failed to create CPU plugin stub for %s policy: %+v", PolicyName, err)
 	}
+
+	policy.configPath = configPath
 
 	return plugin
 }
@@ -68,9 +72,10 @@ func (p *poolPolicy) Start(s stub.State, topology *topology.CPUTopology, numRese
 	return nil
 }
 
-func (p *poolPolicy) Configure(s stub.State, config map[string]string) error {
-	logInfo("* Parsing configuration %v", config)
-	cfg, err := pool.ParseNodeConfig(p.numReservedCPUs, config)
+func (p *poolPolicy) Configure(s stub.State) error {
+	logInfo("* Parsing configuration at %s", p.configPath)
+	// read the configuration data from a ConfigMap associated with the pod
+	cfg, err := pool.ParseNodeConfig(p.numReservedCPUs, p.configPath)
 	if err != nil {
 		return err
 	}
@@ -169,9 +174,12 @@ func (p *poolPolicy) RemoveContainer(s stub.State, containerID string) {
 }
 
 func main() {
+	var configPath string
+
+	flag.StringVar(&configPath, "config", configDir, "absolute path to CPU pool plugin configuration directory, expecting ConfigMap-style configuration")
 	flag.Parse()
 
-	plugin := NewPoolPolicy()
+	plugin := NewPoolPolicy(configPath)
 
 	if err := plugin.StartCpuPlugin(); err != nil {
 		logPanic("failed to start CPU plugin stub with static policy: %+v", err)

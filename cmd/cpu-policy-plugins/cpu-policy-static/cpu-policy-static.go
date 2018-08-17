@@ -15,17 +15,17 @@
 package main
 
 import (
-	"fmt"
 	"flag"
+	"fmt"
 
 	"github.com/golang/glog"
 
 	"k8s.io/api/core/v1"
 	v1qos "k8s.io/kubernetes/pkg/apis/core/v1/helper/qos"
-	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/topology"
-//	api "k8s.io/kubernetes/pkg/kubelet/apis/cpuplugin/v1alpha"
+	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
+	//	api "k8s.io/kubernetes/pkg/kubelet/apis/cpuplugin/v1alpha"
 	stub "k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/stub"
 )
 
@@ -73,7 +73,7 @@ func (p *staticPolicy) Start(s stub.State, topology *topology.CPUTopology, numRe
 
 	p.topology = topology
 	p.reserved = reserved
-	
+
 	if err := p.validateState(s); err != nil {
 		glog.Errorf("[cpumanager] static policy invalid state: %s\n", err.Error())
 		return fmt.Errorf("[cpumanager] - invalid state (%v), please drain node and remove policy state file", err)
@@ -82,7 +82,7 @@ func (p *staticPolicy) Start(s stub.State, topology *topology.CPUTopology, numRe
 	return nil
 }
 
-func (p *staticPolicy) Configure(s stub.State, config map[string]string) error {
+func (p *staticPolicy) Configure(s stub.State) error {
 	return nil
 }
 
@@ -194,7 +194,6 @@ func main() {
 		logPanic("failed to start CPU plugin stub with static policy: %+v", err)
 	}
 }
-
 
 //
 // errors and logging
