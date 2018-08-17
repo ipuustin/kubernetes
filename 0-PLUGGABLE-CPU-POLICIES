@@ -120,7 +120,7 @@ by hand to verify that it starts up successfully.
 You can do this by running
 
 systemctl stop kubelet.service
-_output/local/bin/linux/amd64/kubelet --bootstrap-kubeconfig=/etc/kubernetes/bootstrap-kubelet.conf --kubeconfig=/etc/kubernetes/kubelet.conf --pod-manifest-path=/etc/kubernetes/manifests --allow-privileged=true --network-plugin=cni --cni-conf-dir=/etc/cni/net.d --cni-bin-dir=/opt/cni/bin --cluster-dns=10.96.0.10 --cluster-domain=cluster.local --authorization-mode=Webhook --client-ca-file=/etc/kubernetes/pki/ca.crt --cadvisor-port=0 --cgroup-driver=systemd --rotate-certificates=true --cert-dir=/var/lib/kubelet/pki --feature-gates=CPUManager=true --kube-reserved=cpu=800m --cpu-manager-reconcile-period=60s --cpu-manager-policy=plugin:pool --cpu-manager-policy-config=reserved=0,default=1,2,avx512=3
+_output/local/bin/linux/amd64/kubelet --bootstrap-kubeconfig=/etc/kubernetes/bootstrap-kubelet.conf --kubeconfig=/etc/kubernetes/kubelet.conf --pod-manifest-path=/etc/kubernetes/manifests --allow-privileged=true --network-plugin=cni --cni-conf-dir=/etc/cni/net.d --cni-bin-dir=/opt/cni/bin --cluster-dns=10.96.0.10 --cluster-domain=cluster.local --authorization-mode=Webhook --client-ca-file=/etc/kubernetes/pki/ca.crt --cadvisor-port=0 --cgroup-driver=systemd --rotate-certificates=true --cert-dir=/var/lib/kubelet/pki --feature-gates=CPUManager=true --kube-reserved=cpu=800m --cpu-manager-reconcile-period=60s --cpu-manager-policy=plugin:pool
 
 The first part of the command line up till the --feature-gates option is
 the original kubelet command line which you can check and copy for your
@@ -167,7 +167,7 @@ removal requests.
 You need to run the CpuPool Webhook which augments pod creation requests
 with the necessary CPU pool information. You can create the webhook
 deployment with the supplied script from the source tree. Before doing so,
-however you need to update the deploymnet YAML file to point to your
+however you need to update the deployment YAML file to point to your
 local registry. You can do this by running
 
 sed -i -e 's#intel-cpu-pool-admissionwebhook:devel#<IP-ADDRESS>:5000/intel-cpu-pool-admissionwebhook:devel#g' deployments/cpu_pool_admissionwebhook/deployment.yaml
@@ -321,11 +321,11 @@ cd kubernetes
 git branch --track devel/cpumanager/pluggable-policies origin/devel/cpumanager/pluggable-policies
 git checkout devel/cpumanager/pluggable-policies
 make KUBE_VERBOSE=1 KUBE_RELEASE_RUN_TESTS=n KUBE_FASTBUILD=true WHAT=cmd/kubelet
-make KUBE_VERBOSE=1 KUBE_RELEASE_RUN_TESTS=n KUBE_FASTBUILD=true WHAT=cmd/cpu-policy-plugins/cpu-policy-pool
 cd ..
 ```
 
 5. Clone and compile the Kubernetes CpuPool mutable admission webhook
+   and the pool policy plugin.
 
 ```
 mkdir -p $GOPATH/src/github.com/intel
@@ -337,9 +337,10 @@ git checkout cpu-pool
 export SRC=$GOPATH/src/github.com/intel/intel-device-plugins-for-kubernetes
 cd $SRC
 make intel-cpu-pool-admissionwebhook
+make intel-cpu-pool-policy
 ```
 
-6. Start/Deploy the CpuPool mutating admission webhook.
+6. Set up a Docker registry for cpu pool plugin and the webhook
 
 If your the master node of your cluster is not the one you compiled the
 CpuPool webhook, you need to create a local docker registry, and push
@@ -365,22 +366,32 @@ EOF
 systemctl restart docker.service
 ```
 
-Next push the webhook docker image you built to your local registry:
+7. Start/Deploy the CpuPool mutating admission webhook and cpu pool
+   policy plugin.
+
+Next push the webhook docker image and the pool plugin you built to your local registry:
 
 ```
 docker tag intel-cpu-pool-admissionwebhook:devel <ip-of-your-registry-machine>:5000/intel-cpu-pool-admissionwebhook:devel
 docker push <ip-of-your-registry-machine>:5000/intel-cpu-pool-admissionwebhook:devel
+
+docker tag intel-cpu-pool-policy:devel <ip-of-your-registry-machine>:5000/intel-cpu-pool-policy:devel
+docker push <ip-of-your-registry-machine>:5000/intel-cpu-pool-policy:devel
 ```
 
 Now, on your cluster nodes pull in the webhook docker image and re-tag it.
 Alternatively, you can omit this step, if you change the mutating admission
 webhooks deployment YAML file in
 deployments/cpu_pool_admissionwebhook/deployment.yaml to point to the image
-in your local registry.
+in your local registry. You can do the same for the cpu pool plugin deployment
+file in deployments/cpu_pool_policy/cpu-pool-plugin-deployment.yaml .
 
 ```
 docker pull <ip-of-your-registry-machine>:5000/intel-cpu-pool-admissionwebhook:devel
 docker tag <ip-of-your-registry-machine>:5000/intel-cpu-pool-admissionwebhook:devel intel-cpu-pool-admissionwebhook:devel
+
+docker pull <ip-of-your-registry-machine>:5000/intel-cpu-pool-policy:devel
+docker tag <ip-of-your-registry-machine>:5000/intel-cpu-pool-policy:devel intel-cpu-pool-policy:devel
 ```
 
 Now you're ready to deploy the admission webhook. The scripts needs CFSSL so you
@@ -403,3 +414,17 @@ intel-cpu-pool-webhook-deployment   1         1         1            1          
 NAME                                                 READY     STATUS    RESTARTS   AGE
 intel-cpu-pool-webhook-deployment-668d489cc5-5bckm   1/1       Running   0          16m
 ```
+
+Set up the node CPU pool configuration ConfigMap with the CPU pools you
+require by editing
+deployments/cpu_pool_policy/cpu-pool-plugin-configmap.yaml . You can
+install the ConfigMap with `kubectl create -f
+deployments/cpu_pool_policy/cpu-pool-plugin-configmap.yaml` command.
+
+When the ConfigMap is in place, adjust
+`deployments/cpu_pool_policy/cpu-pool-plugin-deployment.yaml` to run the
+the plugin on the nodes which you need (by default it runs on every
+non-master node). Then apply the configuration with `kubectl create -f
+deployments/cpu_pool_policy/cpu-pool-plugin-deployment.yaml`. This
+should create a number of pods which contain the cpu pool policy plugin
+and can talk to the kubelet.
