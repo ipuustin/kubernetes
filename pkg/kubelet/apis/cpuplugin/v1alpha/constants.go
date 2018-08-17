@@ -22,9 +22,7 @@ const (
 	// Directory where both the CPU Manager registration socket and the
 	// CPU plugin socket is located. Only privileged pods have access to
 	// this path.
-	// Note: PLaceholder until we find a "standard path".
-	//CpuPluginPath = "/var/lib/kubelet/cpu-plugin"
-	CpuPluginPath = "/tmp/cpu-plugin"
+	CpuPluginPath = "/var/lib/kubelet/cpu-plugin"
 	// CPU Manager socket path.
 	CpuManagerSocket = CpuPluginPath + "/cpumgr.sock"
 )
