@@ -285,7 +285,6 @@ func (r *pluginRelay) configure() error {
 	rpl, err := r.plugin.Configure(ctx, &api.ConfigureRequest{
 		Topology:        stub.StubCPUTopology(*r.topology),
 		NumReservedCPUs: int32(r.numReservedCPUs),
-		Config:          r.policyConfig,
 		State:           r.stubState(),
 	})
 

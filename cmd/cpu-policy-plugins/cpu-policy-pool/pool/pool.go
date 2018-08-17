@@ -50,6 +50,7 @@ package pool
 import (
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"strconv"
 	"strings"
 
@@ -145,16 +146,23 @@ func DefaultNodeConfig(numReservedCPUs int, cpuPoolConfig map[string]string) (No
 	return nc, nil
 }
 
-// Parse the given node CPU pool configuration.
-func ParseNodeConfig(numReservedCPUs int, cpuPoolConfig map[string]string) (NodeConfig, error) {
-	if cpuPoolConfig == nil {
+func ParseNodeConfig(numReservedCPUs int, path string) (NodeConfig, error) {
+	files, err := ioutil.ReadDir(path)
+
+	// maybe no-one loaded a ConfigMap for us?
+	if err != nil || len(files) == 0 {
 		return DefaultNodeConfig(numReservedCPUs, nil)
 	}
 
 	nc := make(NodeConfig)
 
-	for name, cfg := range cpuPoolConfig {
-		if err := nc.setPoolConfig(name, cfg); err != nil {
+	for _, file := range files {
+		data, err := ioutil.ReadFile(file.Name())
+		if err != nil {
+			logWarning("Could not read file %s", file.Name())
+			return NodeConfig{}, err
+		}
+		if err := nc.setPoolConfig(file.Name(), string(data[:])); err != nil {
 			return NodeConfig{}, err
 		}
 	}

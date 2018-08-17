@@ -15,13 +15,13 @@
 package stub
 
 import (
-	"fmt"
-	"strings"
-	"os"
-	"time"
-	"net"
 	"context"
+	"fmt"
+	"net"
+	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"google.golang.org/grpc"
 
@@ -39,7 +39,7 @@ const (
 type CpuPolicy interface {
 	Name() string
 	Start(s State, t *topology.CPUTopology, numReservedCPUs int) error
-	Configure(s State, config map[string]string) error
+	Configure(s State) error
 	AddContainer(s State, p *v1.Pod, c *v1.Container, id string) error
 	RemoveContainer(s State, id string)
 }
@@ -65,7 +65,7 @@ func NewCpuPlugin(policy CpuPolicy, vendor string) (CpuPlugin, error) {
 	if !strings.Contains(vendor, ".") {
 		return nil, fmt.Errorf("Invalid vendor string %s, should be a domain name.", vendor)
 	}
-	
+
 	p := &cpuPlugin{
 		serverAddr: api.CpuManagerSocket,
 		clientAddr: filepath.Join(api.CpuPluginPath, policy.Name()) + ".sock",
@@ -102,7 +102,7 @@ func (p *cpuPlugin) StartCpuPlugin() error {
 		}()
 
 		// Wait for our server to start up.
-		if err = waitForServer(p.clientAddr, 10 * time.Second); err != nil {
+		if err = waitForServer(p.clientAddr, 10*time.Second); err != nil {
 			return fmt.Errorf("failed to wait for our gRPC server: %+v", err)
 		}
 
@@ -130,7 +130,7 @@ func waitForServer(addr string, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	conn, err := grpc.DialContext(ctx, addr, grpc.WithInsecure(), grpc.WithBlock(),
-		grpc.WithDialer(func (addr string, timeout time.Duration) (net.Conn, error) {
+		grpc.WithDialer(func(addr string, timeout time.Duration) (net.Conn, error) {
 			return net.DialTimeout("unix", addr, timeout)
 		}),
 	)
@@ -145,7 +145,7 @@ func waitForServer(addr string, timeout time.Duration) error {
 // Register with the CPUManager
 func (p *cpuPlugin) registerWithCPUManager() error {
 	conn, err := grpc.Dial(p.serverAddr, grpc.WithInsecure(),
-		grpc.WithDialer(func (addr string, timeout time.Duration) (net.Conn, error) {
+		grpc.WithDialer(func(addr string, timeout time.Duration) (net.Conn, error) {
 			return net.DialTimeout("unix", addr, timeout)
 		}))
 	defer conn.Close()
@@ -171,23 +171,22 @@ func (p *cpuPlugin) registerWithCPUManager() error {
 // Relay configuration request.
 func (p *cpuPlugin) Configure(ctx context.Context, req *api.ConfigureRequest) (*api.ConfigureResponse, error) {
 	logInfo("Configure request")
-	
+
 	topology := CoreCPUTopology(req.Topology)
 	numReservedCPUs := int(req.NumReservedCPUs)
-	config := req.Config
 	p.state = newStubState(req.State, p.vendor)
-	
+
 	if err := p.policy.Start(&p.state, &topology, numReservedCPUs); err != nil {
 		return nil, err
 	}
-	
-	if err := p.policy.Configure(&p.state, config); err != nil {
+
+	if err := p.policy.Configure(&p.state); err != nil {
 		return nil, err
 	}
 
 	return &api.ConfigureResponse{
 		Resources: p.state.ResourceChanges(true),
-		State: p.state.StateChanges(),
+		State:     p.state.StateChanges(),
 	}, nil
 }
 
@@ -206,9 +205,9 @@ func (p *cpuPlugin) AddContainer(ctx context.Context, req *api.AddContainerReque
 	}
 
 	return &api.AddContainerResponse{
-		Hints: p.state.ContainerChanges(),
+		Hints:     p.state.ContainerChanges(),
 		Resources: p.state.ResourceChanges(false),
-		State: p.state.StateChanges(),
+		State:     p.state.StateChanges(),
 	}, nil
 }
 
@@ -218,12 +217,12 @@ func (p *cpuPlugin) RemoveContainer(ctx context.Context, req *api.RemoveContaine
 
 	id := req.Id
 
-	p.state.Reset()	
+	p.state.Reset()
 	p.policy.RemoveContainer(&p.state, id)
 
 	return &api.RemoveContainerResponse{
-		Hints: p.state.ContainerChanges(),
+		Hints:     p.state.ContainerChanges(),
 		Resources: p.state.ResourceChanges(false),
-		State: p.state.StateChanges(),
+		State:     p.state.StateChanges(),
 	}, nil
 }
