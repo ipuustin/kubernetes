@@ -59,7 +59,6 @@ type pluginRelay struct {
 	sync.Mutex                            // we're lockable
 	topology        *topology.CPUTopology // discovered CPU topology
 	numReservedCPUs int                   // reserved number of CPUs
-	policyConfig    map[string]string     // opaque policy configuration
 	expectedPolicy  string                // expected policy
 	updateCapacity  UpdateCapacityFunc    // function to update resource capacity
 	socketDir       string                // directory for server and plugin sockets
@@ -79,13 +78,12 @@ type pluginRelay struct {
 
 // NewRelayPolicy creates a new policy for relaying to external CPU policy plugins.
 func NewRelayPolicy(topology *topology.CPUTopology, numReservedCPUs int,
-	plugin string, config map[string]string, updateCapacityFunc UpdateCapacityFunc) Policy {
+	plugin string, updateCapacityFunc UpdateCapacityFunc) Policy {
 	logInfo("creating external policy relay")
 
 	r := pluginRelay{
 		topology:        topology,
 		numReservedCPUs: numReservedCPUs,
-		policyConfig:    config,
 		expectedPolicy:  plugin,
 		serverAddr:      api.CpuManagerSocket,
 		updateCapacity:  updateCapacityFunc,
@@ -228,7 +226,6 @@ func (r *pluginRelay) stubState() *api.State {
 	out := &api.State{
 		Assignments:   make(map[string]string),
 		DefaultCPUSet: r.state.GetDefaultCPUSet().String(),
-		PluginState:   r.state.GetPolicyData(),
 	}
 
 	for id, cset := range r.state.GetCPUAssignments() {
@@ -407,7 +404,6 @@ func (r *pluginRelay) updatePluginResources(resources map[string]*api.Quantity) 
 func (r *pluginRelay) applyStateChanges(s state.State, as *api.State) error {
 	if as != nil {
 		s.SetDefaultCPUSet(cpuset.MustParse(as.DefaultCPUSet))
-		s.SetPolicyData(as.PluginState)
 	}
 
 	return nil

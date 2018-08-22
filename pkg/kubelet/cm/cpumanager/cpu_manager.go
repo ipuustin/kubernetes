@@ -107,16 +107,11 @@ type manager struct {
 var _ Manager = &manager{}
 
 // NewManager creates new cpu manager based on provided policy
-func NewManager(cpuPolicyName string, cpuPolicyConfig map[string]string, reconcilePeriod time.Duration, machineInfo *cadvisorapi.MachineInfo, nodeAllocatableReservation v1.ResourceList, stateFileDirectory string) (Manager, error) {
+func NewManager(cpuPolicyName string, reconcilePeriod time.Duration, machineInfo *cadvisorapi.MachineInfo, nodeAllocatableReservation v1.ResourceList, stateFileDirectory string) (Manager, error) {
 	var policy Policy
 
 	args := strings.Split(cpuPolicyName, ":")
 	name := args[0]
-
-	if !strings.HasPrefix(name, string(PolicyRelay)) && cpuPolicyConfig != nil {
-		glog.Errorf("[cpumanager] CPU policy configuration (%v) specified for non-plugin policy (%s)",
-			cpuPolicyConfig, cpuPolicyName)
-	}
 
 	manager := &manager{
 		reconcilePeriod:            reconcilePeriod,
@@ -172,7 +167,7 @@ func NewManager(cpuPolicyName string, cpuPolicyConfig map[string]string, reconci
 				}
 			}
 
-			policy = NewRelayPolicy(topo, numReservedCPUs, plugin, cpuPolicyConfig, updateCapacityFunc)
+			policy = NewRelayPolicy(topo, numReservedCPUs, plugin, updateCapacityFunc)
 		}
 
 	default:
