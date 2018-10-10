@@ -185,7 +185,19 @@ func (cm *containerManagerImpl) getNodeAllocatableAbsolute() v1.ResourceList {
 			// Negative Allocatable resources don't make sense.
 			value.Set(0)
 		}
-		result[k] = value
+
+		if k == v1.ResourceCPU {
+			// min((ALL – sys.reserved - kube.reserved), "other-cpuset")
+			otherCPUsSize := cm.GetNodeConfig().ExperimentalCPUManagerOtherCPUs.Size()
+			otherCPUSizeQuantity := resource.NewQuantity(int64(otherCPUsSize), resource.DecimalSI)
+			if otherCPUSizeQuantity.Cmp(value) < 0 {
+				result[k] = *otherCPUSizeQuantity
+			} else {
+				result[k] = value
+			}
+		} else {
+			result[k] = value
+		}
 	}
 	return result
 
@@ -202,6 +214,15 @@ func (cm *containerManagerImpl) GetNodeAllocatableReservation() v1.ResourceList 
 		}
 		if cm.NodeConfig.KubeReserved != nil {
 			value.Add(cm.NodeConfig.KubeReserved[k])
+		}
+
+		if k == v1.ResourceCPU {
+			// max((sys.reserved + kube.reserved), "other-cpuset")
+			otherCPUsSize := cm.GetNodeConfig().ExperimentalCPUManagerOtherCPUs.Size()
+			otherCPUSizeQuantity := resource.NewQuantity(int64(otherCPUsSize), resource.DecimalSI)
+			if otherCPUSizeQuantity.Cmp(*value) > 0 {
+				value = otherCPUSizeQuantity
+			}
 		}
 		if evictionReservation != nil {
 			value.Add(evictionReservation[k])

@@ -24,6 +24,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 	evictionapi "k8s.io/kubernetes/pkg/kubelet/eviction/api"
 )
 
@@ -232,8 +233,10 @@ func TestNodeAllocatableForEnforcement(t *testing.T) {
 			expected:       getResourceList("10", ""),
 		},
 	}
+	cpus, _ := cpuset.Parse("0-11")
 	for idx, tc := range testCases {
 		nc := NodeConfig{
+			ExperimentalCPUManagerOtherCPUs: cpus,
 			NodeAllocatableConfig: NodeAllocatableConfig{
 				KubeReserved:   tc.kubeReserved,
 				SystemReserved: tc.systemReserved,
