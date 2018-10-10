@@ -73,6 +73,8 @@ type staticPolicy struct {
 	topology *topology.CPUTopology
 	// set of CPUs that is not available for exclusive assignment
 	reserved cpuset.CPUSet
+	// set of CPUs from which the Guaranteed pod allocations must be made
+	availableCPUs cpuset.CPUSet
 }
 
 // Ensure staticPolicy implements Policy interface
@@ -81,14 +83,25 @@ var _ Policy = &staticPolicy{}
 // NewStaticPolicy returns a CPU manager policy that does not change CPU
 // assignments for exclusively pinned guaranteed containers after the main
 // container process starts.
-func NewStaticPolicy(topology *topology.CPUTopology, numReservedCPUs int) Policy {
+func NewStaticPolicy(topology *topology.CPUTopology, numReservedCPUs int, availableCPUs cpuset.CPUSet) Policy {
 	allCPUs := topology.CPUDetails.CPUs()
+
+	// The semantics of "reserved" is that it is a subset of the default CPU
+	// set. The default CPU set is, in turn, part of both best effort and other
+	// cpu sets. We'll try do the reservation from CPUs not in "other" CPU set,
+	// and if that fails, we'll try to do it from all CPUs. The problem is that
+	// we can't expect any CPU set to be large enough to contain the reserved
+	// CPUs (except from all CPUs).
+
 	// takeByTopology allocates CPUs associated with low-numbered cores from
 	// allCPUs.
 	//
 	// For example: Given a system with 8 CPUs available and HT enabled,
 	// if numReservedCPUs=2, then reserved={0,4}
-	reserved, _ := takeByTopology(topology, allCPUs, numReservedCPUs)
+	reserved, err := takeByTopology(topology, allCPUs.Difference(availableCPUs), numReservedCPUs)
+	if err != nil {
+		reserved, _ = takeByTopology(topology, allCPUs, numReservedCPUs)
+	}
 
 	if reserved.Size() != numReservedCPUs {
 		panic(fmt.Sprintf("[cpumanager] unable to reserve the required amount of CPUs (size of %s did not equal %d)", reserved, numReservedCPUs))
@@ -97,8 +110,9 @@ func NewStaticPolicy(topology *topology.CPUTopology, numReservedCPUs int) Policy
 	glog.Infof("[cpumanager] reserved %d CPUs (\"%s\") not available for exclusive assignment", reserved.Size(), reserved)
 
 	return &staticPolicy{
-		topology: topology,
-		reserved: reserved,
+		topology:      topology,
+		reserved:      reserved,
+		availableCPUs: availableCPUs,
 	}
 }
 
@@ -167,7 +181,8 @@ func (p *staticPolicy) validateState(s state.State) error {
 
 // assignableCPUs returns the set of unassigned CPUs minus the reserved set.
 func (p *staticPolicy) assignableCPUs(s state.State) cpuset.CPUSet {
-	return s.GetDefaultCPUSet().Difference(p.reserved)
+	unassignedCPUs := p.availableCPUs.Intersection(s.GetDefaultCPUSet())
+	return unassignedCPUs.Difference(p.reserved)
 }
 
 func (p *staticPolicy) AddContainer(s state.State, pod *v1.Pod, container *v1.Container, containerID string) error {

@@ -152,7 +152,7 @@ func TestCPUManagerAdd(t *testing.T) {
 				2: {CoreID: 2, SocketID: 0},
 				3: {CoreID: 3, SocketID: 0},
 			},
-		}, 0)
+		}, 0, cpuset.NewCPUSet(1, 2, 3, 4))
 	testCases := []struct {
 		description string
 		updateErr   error
@@ -197,6 +197,7 @@ func TestCPUManagerAdd(t *testing.T) {
 			},
 			activePods:        func() []*v1.Pod { return nil },
 			podStatusProvider: mockPodStatusProvider{},
+			otherCPUs:         cpuset.NewCPUSet(1, 2, 3, 4),
 		}
 
 		pod := makePod("2", "2")
@@ -299,7 +300,12 @@ func TestCPUManagerGenerate(t *testing.T) {
 			}
 			defer os.RemoveAll(sDir)
 
-			mgr, err := NewManager(testCase.cpuPolicyName, 5*time.Second, machineInfo, testCase.nodeAllocatableReservation, sDir)
+			allCPUs, err := cpuset.AllCPUs()
+			if err != nil {
+				t.Errorf("could not get all CPUs: %s", err.Error())
+			}
+
+			mgr, err := NewManager(testCase.cpuPolicyName, 5*time.Second, allCPUs, allCPUs, machineInfo, testCase.nodeAllocatableReservation, sDir)
 			if testCase.expectedError != nil {
 				if !strings.Contains(err.Error(), testCase.expectedError.Error()) {
 					t.Errorf("Unexpected error message. Have: %s wants %s", err.Error(), testCase.expectedError.Error())

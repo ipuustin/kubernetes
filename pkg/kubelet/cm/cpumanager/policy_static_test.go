@@ -39,16 +39,28 @@ type staticPolicyTest struct {
 	expCPUAlloc     bool
 	expCSet         cpuset.CPUSet
 	expPanic        bool
+	otherCPUs       cpuset.CPUSet
 }
 
 func TestStaticPolicyName(t *testing.T) {
-	policy := NewStaticPolicy(topoSingleSocketHT, 1)
+	policy := NewStaticPolicy(topoSingleSocketHT, 1, cpuset.NewCPUSet(1, 2))
 
 	policyName := policy.Name()
 	if policyName != "static" {
 		t.Errorf("StaticPolicy Name() error. expected: static, returned: %v",
 			policyName)
 	}
+}
+
+func makeContinuousCPUset(end int) cpuset.CPUSet {
+	res := make([]int, end)
+
+	for i := 0; i < end; i++ {
+		res[i] = i
+	}
+
+	cpus := cpuset.NewCPUSet(res...)
+	return cpus
 }
 
 func TestStaticPolicyStart(t *testing.T) {
@@ -61,6 +73,7 @@ func TestStaticPolicyStart(t *testing.T) {
 			},
 			stDefaultCPUSet: cpuset.NewCPUSet(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11),
 			expCSet:         cpuset.NewCPUSet(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11),
+			otherCPUs:       cpuset.NewCPUSet(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11),
 		},
 		{
 			description:     "empty cpuset",
@@ -69,6 +82,7 @@ func TestStaticPolicyStart(t *testing.T) {
 			stAssignments:   state.ContainerCPUAssignments{},
 			stDefaultCPUSet: cpuset.NewCPUSet(),
 			expCSet:         cpuset.NewCPUSet(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11),
+			otherCPUs:       cpuset.NewCPUSet(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11),
 		},
 		{
 			description:     "reserved cores 0 & 6 are not present in available cpuset",
@@ -77,6 +91,7 @@ func TestStaticPolicyStart(t *testing.T) {
 			stAssignments:   state.ContainerCPUAssignments{},
 			stDefaultCPUSet: cpuset.NewCPUSet(0, 1),
 			expPanic:        true,
+			otherCPUs:       cpuset.NewCPUSet(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11),
 		},
 		{
 			description: "assigned core 2 is still present in available cpuset",
@@ -86,6 +101,7 @@ func TestStaticPolicyStart(t *testing.T) {
 			},
 			stDefaultCPUSet: cpuset.NewCPUSet(2, 3, 4, 5, 6, 7, 8, 9, 10, 11),
 			expPanic:        true,
+			otherCPUs:       cpuset.NewCPUSet(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11),
 		},
 		{
 			description: "core 12 is not present in topology but is in state cpuset",
@@ -96,6 +112,7 @@ func TestStaticPolicyStart(t *testing.T) {
 			},
 			stDefaultCPUSet: cpuset.NewCPUSet(5, 6, 7, 8, 9, 10, 11, 12),
 			expPanic:        true,
+			otherCPUs:       cpuset.NewCPUSet(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11),
 		},
 		{
 			description: "core 11 is present in topology but is not in state cpuset",
@@ -106,6 +123,7 @@ func TestStaticPolicyStart(t *testing.T) {
 			},
 			stDefaultCPUSet: cpuset.NewCPUSet(5, 6, 7, 8, 9, 10),
 			expPanic:        true,
+			otherCPUs:       cpuset.NewCPUSet(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11),
 		},
 	}
 	for _, testCase := range testCases {
@@ -119,7 +137,7 @@ func TestStaticPolicyStart(t *testing.T) {
 					t.Error("expected panic doesn't occurred")
 				}
 			}()
-			policy := NewStaticPolicy(testCase.topo, testCase.numReservedCPUs).(*staticPolicy)
+			policy := NewStaticPolicy(testCase.topo, testCase.numReservedCPUs, testCase.otherCPUs).(*staticPolicy)
 			st := &mockState{
 				assignments:   testCase.stAssignments,
 				defaultCPUSet: testCase.stDefaultCPUSet,
@@ -171,6 +189,7 @@ func TestStaticPolicyAdd(t *testing.T) {
 			expErr:          fmt.Errorf("not enough cpus available to satisfy request"),
 			expCPUAlloc:     false,
 			expCSet:         cpuset.NewCPUSet(),
+			otherCPUs:       makeContinuousCPUset(12),
 		},
 		{
 			description:     "GuPodSingleCore, SingleSocketHT, ExpectAllocOneCPU",
@@ -183,6 +202,7 @@ func TestStaticPolicyAdd(t *testing.T) {
 			expErr:          nil,
 			expCPUAlloc:     true,
 			expCSet:         cpuset.NewCPUSet(4), // expect sibling of partial core
+			otherCPUs:       makeContinuousCPUset(12),
 		},
 		{
 			description:     "GuPodMultipleCores, SingleSocketHT, ExpectAllocOneCore",
@@ -197,6 +217,7 @@ func TestStaticPolicyAdd(t *testing.T) {
 			expErr:          nil,
 			expCPUAlloc:     true,
 			expCSet:         cpuset.NewCPUSet(1, 5),
+			otherCPUs:       makeContinuousCPUset(12),
 		},
 		{
 			description:     "GuPodMultipleCores, DualSocketHT, ExpectAllocOneSocket",
@@ -211,6 +232,7 @@ func TestStaticPolicyAdd(t *testing.T) {
 			expErr:          nil,
 			expCPUAlloc:     true,
 			expCSet:         cpuset.NewCPUSet(1, 3, 5, 7, 9, 11),
+			otherCPUs:       makeContinuousCPUset(12),
 		},
 		{
 			description:     "GuPodMultipleCores, DualSocketHT, ExpectAllocThreeCores",
@@ -225,6 +247,7 @@ func TestStaticPolicyAdd(t *testing.T) {
 			expErr:          nil,
 			expCPUAlloc:     true,
 			expCSet:         cpuset.NewCPUSet(2, 3, 4, 8, 9, 10),
+			otherCPUs:       makeContinuousCPUset(12),
 		},
 		{
 			description:     "GuPodMultipleCores, DualSocketNoHT, ExpectAllocOneSocket",
@@ -239,6 +262,7 @@ func TestStaticPolicyAdd(t *testing.T) {
 			expErr:          nil,
 			expCPUAlloc:     true,
 			expCSet:         cpuset.NewCPUSet(4, 5, 6, 7),
+			otherCPUs:       makeContinuousCPUset(12),
 		},
 		{
 			description:     "GuPodMultipleCores, DualSocketNoHT, ExpectAllocFourCores",
@@ -253,6 +277,7 @@ func TestStaticPolicyAdd(t *testing.T) {
 			expErr:          nil,
 			expCPUAlloc:     true,
 			expCSet:         cpuset.NewCPUSet(1, 3, 6, 7),
+			otherCPUs:       makeContinuousCPUset(12),
 		},
 		{
 			description:     "GuPodMultipleCores, DualSocketHT, ExpectAllocOneSocketOneCore",
@@ -267,6 +292,7 @@ func TestStaticPolicyAdd(t *testing.T) {
 			expErr:          nil,
 			expCPUAlloc:     true,
 			expCSet:         cpuset.NewCPUSet(1, 3, 4, 5, 7, 9, 10, 11),
+			otherCPUs:       makeContinuousCPUset(12),
 		},
 		{
 			description:     "NonGuPod, SingleSocketHT, NoAlloc",
@@ -279,6 +305,7 @@ func TestStaticPolicyAdd(t *testing.T) {
 			expErr:          nil,
 			expCPUAlloc:     false,
 			expCSet:         cpuset.NewCPUSet(),
+			otherCPUs:       makeContinuousCPUset(12),
 		},
 		{
 			description:     "GuPodNonIntegerCore, SingleSocketHT, NoAlloc",
@@ -291,6 +318,7 @@ func TestStaticPolicyAdd(t *testing.T) {
 			expErr:          nil,
 			expCPUAlloc:     false,
 			expCSet:         cpuset.NewCPUSet(),
+			otherCPUs:       topoSingleSocketHT.CPUDetails.CPUs(),
 		},
 		{
 			description:     "GuPodMultipleCores, SingleSocketHT, NoAllocExpectError",
@@ -305,6 +333,7 @@ func TestStaticPolicyAdd(t *testing.T) {
 			expErr:          fmt.Errorf("not enough cpus available to satisfy request"),
 			expCPUAlloc:     false,
 			expCSet:         cpuset.NewCPUSet(),
+			otherCPUs:       makeContinuousCPUset(12),
 		},
 		{
 			description:     "GuPodMultipleCores, DualSocketHT, NoAllocExpectError",
@@ -319,6 +348,7 @@ func TestStaticPolicyAdd(t *testing.T) {
 			expErr:          fmt.Errorf("not enough cpus available to satisfy request"),
 			expCPUAlloc:     false,
 			expCSet:         cpuset.NewCPUSet(),
+			otherCPUs:       makeContinuousCPUset(12),
 		},
 		{
 			// All the CPUs from Socket 0 are available. Some CPUs from each
@@ -335,6 +365,7 @@ func TestStaticPolicyAdd(t *testing.T) {
 			expErr:          nil,
 			expCPUAlloc:     true,
 			expCSet:         largeTopoSock0CPUSet,
+			otherCPUs:       largeTopoCPUSet,
 		},
 		{
 			// Only 2 full cores from three Sockets and some partial cores are available.
@@ -351,6 +382,7 @@ func TestStaticPolicyAdd(t *testing.T) {
 			expErr:          nil,
 			expCPUAlloc:     true,
 			expCSet:         cpuset.NewCPUSet(1, 25, 13, 38, 11, 35, 23, 48, 53, 173, 113, 233),
+			otherCPUs:       largeTopoCPUSet,
 		},
 		{
 			// All CPUs from Socket 1, 1 full core and some partial cores are available.
@@ -368,6 +400,7 @@ func TestStaticPolicyAdd(t *testing.T) {
 			expErr:      nil,
 			expCPUAlloc: true,
 			expCSet:     largeTopoSock1CPUSet.Union(cpuset.NewCPUSet(10, 34, 22, 47)),
+			otherCPUs:   largeTopoCPUSet,
 		},
 		{
 			// Only partial cores are available in the entire system.
@@ -383,6 +416,7 @@ func TestStaticPolicyAdd(t *testing.T) {
 			expErr:          nil,
 			expCPUAlloc:     true,
 			expCSet:         cpuset.NewCPUSet(10, 11, 53, 67, 52),
+			otherCPUs:       largeTopoCPUSet,
 		},
 		{
 			// Only 7 CPUs are available.
@@ -399,11 +433,12 @@ func TestStaticPolicyAdd(t *testing.T) {
 			expErr:          fmt.Errorf("not enough cpus available to satisfy request"),
 			expCPUAlloc:     false,
 			expCSet:         cpuset.NewCPUSet(),
+			otherCPUs:       largeTopoCPUSet,
 		},
 	}
 
 	for _, testCase := range testCases {
-		policy := NewStaticPolicy(testCase.topo, testCase.numReservedCPUs)
+		policy := NewStaticPolicy(testCase.topo, testCase.numReservedCPUs, testCase.otherCPUs)
 
 		st := &mockState{
 			assignments:   testCase.stAssignments,
@@ -492,7 +527,7 @@ func TestStaticPolicyRemove(t *testing.T) {
 	}
 
 	for _, testCase := range testCases {
-		policy := NewStaticPolicy(testCase.topo, testCase.numReservedCPUs)
+		policy := NewStaticPolicy(testCase.topo, testCase.numReservedCPUs, testCase.otherCPUs)
 
 		st := &mockState{
 			assignments:   testCase.stAssignments,

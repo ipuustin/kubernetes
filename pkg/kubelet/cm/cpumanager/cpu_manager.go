@@ -26,6 +26,7 @@ import (
 	cadvisorapi "github.com/google/cadvisor/info/v1"
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
+	v1qos "k8s.io/kubernetes/pkg/apis/core/v1/helper/qos"
 
 	runtimeapi "k8s.io/kubernetes/pkg/kubelet/apis/cri/runtime/v1alpha2"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/state"
@@ -92,18 +93,23 @@ type manager struct {
 	machineInfo *cadvisorapi.MachineInfo
 
 	nodeAllocatableReservation v1.ResourceList
+
+	// bestEffortCPUs is the the set of CPUs available for pods in Best
+	// Effort QoS class.
+	bestEffortCPUs cpuset.CPUSet
+
+	// otherCPUs is the the set of CPUs available for pods in Guaranteed
+	// and Burstable QoS classes.
+	otherCPUs cpuset.CPUSet
 }
 
 var _ Manager = &manager{}
 
 // NewManager creates new cpu manager based on provided policy
-func NewManager(cpuPolicyName string, reconcilePeriod time.Duration, machineInfo *cadvisorapi.MachineInfo, nodeAllocatableReservation v1.ResourceList, stateFileDirectory string) (Manager, error) {
+func NewManager(cpuPolicyName string, reconcilePeriod time.Duration, bestEffortCPUs cpuset.CPUSet, otherCPUs cpuset.CPUSet, machineInfo *cadvisorapi.MachineInfo, nodeAllocatableReservation v1.ResourceList, stateFileDirectory string) (Manager, error) {
 	var policy Policy
 
 	switch policyName(cpuPolicyName) {
-
-	case PolicyNone:
-		policy = NewNonePolicy()
 
 	case PolicyStatic:
 		topo, err := topology.Discover(machineInfo)
@@ -129,10 +135,25 @@ func NewManager(cpuPolicyName string, reconcilePeriod time.Duration, machineInfo
 		// exclusively allocated.
 		reservedCPUsFloat := float64(reservedCPUs.MilliValue()) / 1000
 		numReservedCPUs := int(math.Ceil(reservedCPUsFloat))
-		policy = NewStaticPolicy(topo, numReservedCPUs)
+		policy = NewStaticPolicy(topo, numReservedCPUs, otherCPUs)
 
 	default:
 		glog.Errorf("[cpumanager] Unknown policy \"%s\", falling back to default policy \"%s\"", cpuPolicyName, PolicyNone)
+
+		fallthrough
+
+	case PolicyNone:
+		// If bestEffortCPUs != otherCPUs != cpuset.AllCpus, we have no way of enforcing that. Return an error.
+
+		allCPUs, err := cpuset.AllCPUs()
+		if err != nil {
+			return nil, fmt.Errorf("[cpumanager] failed to read online system CPU list: %v", err)
+		}
+
+		if !allCPUs.Equals(bestEffortCPUs) || !allCPUs.Equals(otherCPUs) {
+			return nil, fmt.Errorf("[cpumanager] \"best effort\" CPU set or \"other\" CPU set are defined for None policy")
+		}
+
 		policy = NewNonePolicy()
 	}
 
@@ -147,6 +168,8 @@ func NewManager(cpuPolicyName string, reconcilePeriod time.Duration, machineInfo
 		state:                      stateImpl,
 		machineInfo:                machineInfo,
 		nodeAllocatableReservation: nodeAllocatableReservation,
+		bestEffortCPUs:             bestEffortCPUs,
+		otherCPUs:                  otherCPUs,
 	}
 	return manager, nil
 }
@@ -176,6 +199,15 @@ func (m *manager) AddContainer(p *v1.Pod, c *v1.Container, containerID string) e
 	}
 	cpus := m.state.GetCPUSetOrDefault(containerID)
 	m.Unlock()
+
+	if m.policy.Name() != string(PolicyNone) {
+		qos := v1qos.GetPodQOS(p)
+		if qos == v1.PodQOSGuaranteed || qos == v1.PodQOSBurstable {
+			cpus = cpus.Intersection(m.otherCPUs)
+		} else {
+			cpus = cpus.Intersection(m.bestEffortCPUs)
+		}
+	}
 
 	if !cpus.IsEmpty() {
 		err = m.updateContainerCPUSet(containerID, cpus)
@@ -221,6 +253,7 @@ func (m *manager) reconcileState() (success []reconciledContainer, failure []rec
 	failure = []reconciledContainer{}
 
 	for _, pod := range m.activePods() {
+		qos := v1qos.GetPodQOS(pod)
 		allContainers := pod.Spec.InitContainers
 		allContainers = append(allContainers, pod.Spec.Containers...)
 		for _, container := range allContainers {
@@ -262,6 +295,19 @@ func (m *manager) reconcileState() (success []reconciledContainer, failure []rec
 			if cset.IsEmpty() {
 				// NOTE: This should not happen outside of tests.
 				glog.Infof("[cpumanager] reconcileState: skipping container; assigned cpuset is empty (pod: %s, container: %s)", pod.Name, container.Name)
+				failure = append(failure, reconciledContainer{pod.Name, container.Name, containerID})
+				continue
+			}
+
+			if qos == v1.PodQOSGuaranteed || qos == v1.PodQOSBurstable {
+				// FIXME: Should we check if Burstable pods have cset.Size() >= container.Resources.Requests[v1.ResourceCPU] ?
+				cset = cset.Intersection(m.otherCPUs)
+			} else {
+				cset = cset.Intersection(m.bestEffortCPUs)
+			}
+			if cset.IsEmpty() {
+				// No room for the container, this is bad
+				glog.Infof("[cpumanager] reconcileState: skipping container; cpuset is empty because of limited assignment (pod: %s, container: %s)", pod.Name, container.Name)
 				failure = append(failure, reconciledContainer{pod.Name, container.Name, containerID})
 				continue
 			}
