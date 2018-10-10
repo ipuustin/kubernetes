@@ -73,6 +73,7 @@ import (
 	kubeletcertificate "k8s.io/kubernetes/pkg/kubelet/certificate"
 	"k8s.io/kubernetes/pkg/kubelet/certificate/bootstrap"
 	"k8s.io/kubernetes/pkg/kubelet/cm"
+	"k8s.io/kubernetes/pkg/kubelet/cm/cpuset"
 	"k8s.io/kubernetes/pkg/kubelet/config"
 	kubecontainer "k8s.io/kubernetes/pkg/kubelet/container"
 	"k8s.io/kubernetes/pkg/kubelet/dockershim"
@@ -689,6 +690,30 @@ func run(s *options.KubeletServer, kubeDeps *kubelet.Dependencies, stopCh <-chan
 
 		devicePluginEnabled := utilfeature.DefaultFeatureGate.Enabled(features.DevicePlugins)
 
+		experimentalCPUManagerBestEffortCPUs, err := cpuset.Parse(s.CPUManagerBestEffortCPUs)
+		if err != nil {
+			if s.CPUManagerBestEffortCPUs == "all" {
+				experimentalCPUManagerBestEffortCPUs, err = cpuset.AllCPUs()
+				if err != nil {
+					return err
+				}
+			} else {
+				return err
+			}
+		}
+
+		experimentalCPUManagerOtherCPUs, err := cpuset.Parse(s.CPUManagerOtherCPUs)
+		if err != nil {
+			if s.CPUManagerOtherCPUs == "all" {
+				experimentalCPUManagerOtherCPUs, err = cpuset.AllCPUs()
+				if err != nil {
+					return err
+				}
+			} else {
+				return err
+			}
+		}
+
 		kubeDeps.ContainerManager, err = cm.NewContainerManager(
 			kubeDeps.Mounter,
 			kubeDeps.CAdvisorInterface,
@@ -713,6 +738,8 @@ func run(s *options.KubeletServer, kubeDeps *kubelet.Dependencies, stopCh <-chan
 				QOSReserved:                           *experimentalQOSReserved,
 				ExperimentalCPUManagerPolicy:          s.CPUManagerPolicy,
 				ExperimentalCPUManagerReconcilePeriod: s.CPUManagerReconcilePeriod.Duration,
+				ExperimentalCPUManagerBestEffortCPUs:  experimentalCPUManagerBestEffortCPUs,
+				ExperimentalCPUManagerOtherCPUs:       experimentalCPUManagerOtherCPUs,
 				ExperimentalPodPidsLimit:              s.PodPidsLimit,
 				EnforceCPULimits:                      s.CPUCFSQuota,
 				CPUCFSQuotaPeriod:                     s.CPUCFSQuotaPeriod.Duration,

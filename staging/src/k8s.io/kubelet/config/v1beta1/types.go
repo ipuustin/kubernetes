@@ -397,6 +397,14 @@ type KubeletConfiguration struct {
 	// Default: "10s"
 	// +optional
 	CPUManagerReconcilePeriod metav1.Duration `json:"cpuManagerReconcilePeriod,omitempty"`
+	// CPU Manager CPU set for workloads not in Best Effort QoS class.
+	// Default: "all"
+	// +optional
+	CPUManagerOtherCPUs string `json:"cpuManagerOtherCPUs,omitempty"`
+	// CPU Manager CPU set for workloads in Best Effort QoS class.
+	// Default: "all"
+	// +optional
+	CPUManagerBestEffortCPUs string `json:"cpuManagerBestEffortCPUs,omitempty"`
 	// qosReserved is a set of resource name to percentage pairs that specify
 	// the minimum percentage of a resource reserved for exclusive use by the
 	// guaranteed QoS tier.

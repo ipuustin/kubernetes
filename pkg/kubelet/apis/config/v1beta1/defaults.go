@@ -139,6 +139,12 @@ func SetDefaults_KubeletConfiguration(obj *kubeletconfigv1beta1.KubeletConfigura
 		// Keep the same as default NodeStatusUpdateFrequency
 		obj.CPUManagerReconcilePeriod = metav1.Duration{Duration: 10 * time.Second}
 	}
+	if obj.CPUManagerBestEffortCPUs == "" {
+		obj.CPUManagerBestEffortCPUs = "all"
+	}
+	if obj.CPUManagerOtherCPUs == "" {
+		obj.CPUManagerOtherCPUs = "all"
+	}
 	if obj.RuntimeRequestTimeout == zeroDuration {
 		obj.RuntimeRequestTimeout = metav1.Duration{Duration: 2 * time.Minute}
 	}

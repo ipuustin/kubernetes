@@ -191,6 +191,12 @@ type KubeletConfiguration struct {
 	// CPU Manager reconciliation period.
 	// Requires the CPUManager feature gate to be enabled.
 	CPUManagerReconcilePeriod metav1.Duration
+	// CPU allocation for Best Effort QoS class.
+	// Uses CPU set notation.
+	CPUManagerBestEffortCPUs string
+	// CPU allocation for Guaranteed and Burstable QoS classes.
+	// Uses CPU set notation.
+	CPUManagerOtherCPUs string
 	// Map of QoS resource reservation percentages (memory only for now).
 	// Requires the QOSReserved feature gate to be enabled.
 	QOSReserved map[string]string
