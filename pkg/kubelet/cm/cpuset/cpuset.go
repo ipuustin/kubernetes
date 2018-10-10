@@ -19,11 +19,13 @@ package cpuset
 import (
 	"bytes"
 	"fmt"
-	"github.com/golang/glog"
+	"io/ioutil"
 	"reflect"
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/golang/glog"
 )
 
 // Builder is a mutable builder for CPUSet. Functions that mutate instances
@@ -277,4 +279,21 @@ func (s CPUSet) Clone() CPUSet {
 		b.Add(elem)
 	}
 	return b.Result()
+}
+
+// AllCPUs returns a CPU set containing all online CPUs in the system or an error.
+func AllCPUs() (CPUSet, error) {
+
+	onlinePath := "/sys/devices/system/cpu/online"
+	onlineData, err := ioutil.ReadFile(onlinePath)
+	if err != nil {
+		return NewCPUSet(), err
+	}
+
+	allCpus, err := Parse(strings.TrimSpace(string(onlineData[:])))
+	if err != nil {
+		return NewCPUSet(), err
+	}
+
+	return allCpus, nil
 }
